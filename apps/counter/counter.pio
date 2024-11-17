@@ -1,0 +1,42 @@
+;
+; Copyright (c) 2024 Steve Markgraf <steve@steve-m.de>
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+; Generate 16 bit counter in PIO
+;
+
+.pio_version 0
+.program counter
+
+public entry_point:
+
+.wrap_target
+	jmp x-- dummylabel
+dummylabel:
+	mov isr, ~x
+	push
+.wrap
+
+% c-sdk {
+static inline void counter_program_init(PIO pio, uint sm, uint offset)
+{
+	pio_sm_config c = counter_program_get_default_config(offset);
+
+	sm_config_set_in_shift(
+		&c,
+		false,	// Shift-to-right = false (i.e. shift to left)
+		false,	// Autopush enabled
+		1	// Autopush threshold, ignored
+	);
+
+	// disable the TX FIFO to make the RX FIFO deeper.
+	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+
+	sm_config_set_clkdiv(&c, 4.f);
+
+	// Load our configuration, and start the program from the beginning
+	pio_sm_init(pio, sm, offset, &c);
+	pio_sm_set_enabled(pio, sm, true);
+}
+%}
