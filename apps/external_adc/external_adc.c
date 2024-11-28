@@ -49,9 +49,9 @@
 //#define SYS_CLK	384000	// 48 MHz ADC clock
 //#define SYS_CLK	402000	// 50.25 MHz ADC clock, maximum that works on my Pico2 (with overvolting)
 
-// ADC is attached to GP0 - GP11 with clock on GP22
+// ADC is attached to GP0 - GP11 with clock on GP20
 #define PIO_INPUT_PIN_BASE 0
-#define PIO_OUTPUT_CLK_PIN 22
+#define PIO_OUTPUT_CLK_PIN 20
 
 #define DMACH_PIO_PING 0
 #define DMACH_PIO_PONG 1
