@@ -64,7 +64,7 @@ void __scratch_y("") pio_dma_irq_handler()
 	ch->write_addr = (uintptr_t)&ringbuffer[ringbuf_head * RBUF_SLICE_LEN];
 	ch->transfer_count = RBUF_DATA_LEN;
 
-	hsdaoh_update_head(ringbuf_head);
+	hsdaoh_update_head(0, ringbuf_head);
 }
 
 void init_pio_input(void)

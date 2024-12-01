@@ -1,0 +1,103 @@
+;
+; Copyright (c) 2023 Rene Wolf
+;
+; adapted for hsdaoh-rp2350:
+; Copyright (c) 2024 Steve Markgraf <steve@steve-m.de>
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+; See PCM1802 data sheet, figure 25, format 00
+; This output technically has 4 wires, however we don't need the frame sync:
+; - Data is sampled on a positive edge of the bit clock
+; - LRClk changes on the preceeding  falling  edge of bit clock
+; - So we wait for an edge on LRClk which tells us
+;   - the next falling edge on bit clock is MSB of a channel
+;   - what channel follows determined by eitehr positive (left) or negative (right) edge
+; - Frame sync would tell us how many bits are valid, but we  know its 24
+
+
+.define PUBLIC pcm1802_index_data   0
+.define PUBLIC pcm1802_index_bitclk 4
+.define PUBLIC pcm1802_index_lrclk  5
+.define PUBLIC pcm1802_index_auxin  6
+.define polarity_left  1
+.define polarity_right 0
+.program pcm1802_fmt00
+
+public entry_point:
+
+right_ch:
+	set x, 1 ; set jump to left next
+	wait polarity_right pin pcm1802_index_lrclk ; right channel started, next rising edge on bitclk is msb
+	jmp read_sample
+left_ch:
+	set x, 0 ; set jump to right next
+	wait polarity_left pin pcm1802_index_lrclk ; left channel started, next rising edge on bitclk is msb
+	jmp read_sample
+
+read_sample:
+	in x, 1
+	set y, 23 ; load 24-1 into y, because jmp is a pre-decrement check
+read_bit:
+	wait 0 pin pcm1802_index_bitclk
+	wait 1 pin pcm1802_index_bitclk ; positive edge -> data valid now
+	in pins, 1       ; read one bit from data pin into ISR
+	jmp y-- read_bit ; jump if Y!=0 && decrement Y if jump taken
+	push
+
+	; sample the auxilary input pin (e.g. for headswitch signal)
+	mov osr, pins
+	out null, pcm1802_index_auxin
+	in osr, 1
+
+	jmp !x right_ch  ; jmp to right_ch if X==0
+	jmp left_ch      ; go for next sample start
+
+% c-sdk {
+static inline void pcm1802_fmt00_program_init(PIO pio, uint sm, uint offset, uint pin)
+{
+	pio_sm_config c = pcm1802_fmt00_program_get_default_config(offset);
+
+	// Set the IN base pin to the provided `pin` parameter.
+	sm_config_set_in_pins(&c, pin);
+
+	uint32_t pin_mask = (1 << pcm1802_index_auxin) |
+			    (1 << pcm1802_index_lrclk) |
+			    (1 << pcm1802_index_bitclk) |
+			    (1 << pcm1802_index_data);
+
+	pio_sm_set_pindirs_with_mask (pio, sm, 0, pin_mask << pin);
+
+	sm_config_set_jmp_pin(&c, pin + pcm1802_index_data);
+
+	// Connect these GPIOs to this PIO block
+	pio_gpio_init(pio, pin + pcm1802_index_data);
+	pio_gpio_init(pio, pin + pcm1802_index_bitclk);
+	pio_gpio_init(pio, pin + pcm1802_index_lrclk);
+	pio_gpio_init(pio, pin + pcm1802_index_auxin);
+
+	sm_config_set_in_shift(
+		&c,
+		false,	// Shift-to-right = false (i.e. shift to left)
+		false,	// Autopush disabled
+		32	// Autopush threshold: ignored
+	);
+
+	// required in order to set shift-to-right to true (for the out, null ops)
+	sm_config_set_out_shift(
+		&c,
+		true,	// Shift-to-right = true
+		false,	// Autopush disabled
+		1	// Autopush threshold: ignored
+	);
+
+	// We only receive, so disable the TX FIFO to make the RX FIFO deeper.
+	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+
+	sm_config_set_clkdiv(&c, 2.f);
+
+	// Load our configuration, and start the program from the beginning
+	pio_sm_init(pio, sm, offset, &c);
+	pio_sm_set_enabled(pio, sm, true);
+}
+%}

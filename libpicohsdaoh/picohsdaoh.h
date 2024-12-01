@@ -32,6 +32,7 @@
 
 void hsdaoh_start(void);
 void hsdaoh_init(uint16_t *ringbuf);
-void hsdaoh_update_head(int head);
+void hsdaoh_update_head(int stream_id, int head);
+void hsdaoh_set_aux_ringbuf(uint16_t *auxringbuf);
 
 #endif

@@ -68,6 +68,7 @@
 #define HSTX_CMD_NOP		(0xfu << 12)
 
 uint16_t *ring_buf = NULL;
+uint16_t *aux_ring_buf = NULL;
 uint16_t idle_line_buf1[MODE_H_ACTIVE_PIXELS];
 uint16_t idle_line_buf2[MODE_H_ACTIVE_PIXELS];
 uint32_t info_p[64];
@@ -75,6 +76,9 @@ uint32_t info_len;
 
 int fifo_tail = RBUF_SLICES-1;
 int fifo_head = 0;
+
+int aux_tail = RBUF_SLICES-1;
+int aux_head = 0;
 
 static uint32_t vblank_line_vsync_off[] = {
 	HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH,
@@ -148,9 +152,12 @@ void init_info_packet(void)
 	info_len = len;
 }
 
-void hsdaoh_update_head(int head)
+void hsdaoh_update_head(int stream_id, int head)
 {
-	fifo_head = head;
+	if (stream_id == 0)
+		fifo_head = head;
+	else
+		aux_head = head;
 }
 
 #define DMACH_HSTX_START	13
@@ -236,13 +243,25 @@ void __scratch_x("") hstx_dma_irq_handler()
 		uint16_t cur_active_line = v_scanline - (MODE_V_TOTAL_LINES - MODE_V_ACTIVE_LINES);
 
 		if (fifo_head == next_tail) {
-			/* No data to send, use idle line */
-			next_line = (cur_active_line % 2) ? idle_line_buf1 : idle_line_buf2;
-			next_line[RBUF_SLICE_LEN - 1] = 0;
+			int next_aux_tail = (aux_tail + 1) % RBUF_SLICES;
+
+			if ((aux_head == next_aux_tail) || (aux_ring_buf == NULL)) {
+				/* No data to send, use idle line */
+				next_line = (cur_active_line % 2) ? idle_line_buf1 : idle_line_buf2;
+				next_line[RBUF_SLICE_LEN - 1] = 0;
+			} else {
+				next_line = &aux_ring_buf[aux_tail * RBUF_SLICE_LEN];
+				aux_tail = next_aux_tail;
+				next_line[RBUF_SLICE_LEN - 1] = RBUF_DATA_LEN-1; //fixme
+
+				// stream ID
+				next_line[RBUF_SLICE_LEN - 3] = 1;
+			}
 		} else {
 			next_line = &ring_buf[fifo_tail * RBUF_SLICE_LEN];
 			fifo_tail = next_tail;
 			next_line[RBUF_SLICE_LEN - 1] = RBUF_DATA_LEN;
+			next_line[RBUF_SLICE_LEN - 3] = 0; // stream ID
 		}
 
 		/* fill in metadata word (last word of line) */
@@ -256,7 +275,6 @@ void __scratch_x("") hstx_dma_irq_handler()
 
 		/* on the second last word of the line, insert the CRC16 of the entire line before the last line */
 		next_line[RBUF_SLICE_LEN - 2] = saved_crc;
-		next_line[RBUF_SLICE_LEN - 3] = 0;
 
 		dma_sniff_pipelined_ch = ch_num;
 
@@ -287,7 +305,12 @@ void hsdaoh_start(void)
 	dma_channel_start(DMACH_HSTX_START);
 }
 
-void hsdaoh_init(uint16_t *ringbuf)//struct hsdaoh_inst *inst, uint16_t *ringbuf)
+void hsdaoh_set_aux_ringbuf(uint16_t *auxringbuf)
+{
+	aux_ring_buf = auxringbuf;
+}
+
+void hsdaoh_init(uint16_t *ringbuf)
 {
 	ring_buf = ringbuf;
 

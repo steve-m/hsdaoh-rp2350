@@ -12,6 +12,7 @@ target_link_libraries(external_adc
 	libpicohsdaoh
 )
 pico_generate_pio_header(external_adc ${CMAKE_CURRENT_LIST_DIR}/adc_12bit_input.pio)
+pico_generate_pio_header(external_adc ${CMAKE_CURRENT_LIST_DIR}/pcm1802_fmt00.pio)
 
 # enable usb output, disable uart output
 pico_enable_stdio_usb(external_adc 1)

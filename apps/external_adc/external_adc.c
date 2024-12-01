@@ -37,11 +37,13 @@
 #include "hardware/irq.h"
 #include "hardware/sync.h"
 #include "hardware/vreg.h"
+#include "hardware/pll.h"
 #include "hardware/dma.h"
 #include "hardware/pio.h"
 
 #include "picohsdaoh.h"
 #include "adc_12bit_input.pio.h"
+#include "pcm1802_fmt00.pio.h"
 
 /* The PIO is running with sys_clk/1, and needs 4 cycles per sample,
  * so the ADC clock is sys_clk/4 */
@@ -73,7 +75,7 @@ void __scratch_y("") pio_dma_irq_handler()
 	ch->write_addr = (uintptr_t)&ringbuffer[ringbuf_head * RBUF_SLICE_LEN];
 	ch->transfer_count = RBUF_DATA_LEN;
 
-	hsdaoh_update_head(ringbuf_head);
+	hsdaoh_update_head(0, ringbuf_head);
 }
 
 void init_pio_input(void)
@@ -123,6 +125,77 @@ void init_pio_input(void)
 	dma_channel_start(DMACH_PIO_PING);
 }
 
+#define PCM1802_DATA_PIN	22
+
+#define DMACH_AUDIO_PIO_PING 2
+#define DMACH_AUDIO_PIO_PONG 3
+
+static bool audio_pio_dma_pong = false;
+uint16_t audio_ringbuffer[RBUF_TOTAL_LEN];
+int audio_ringbuf_head = 2;
+
+void __scratch_y("") audio_pio_dma_irq_handler()
+{
+	uint ch_num = audio_pio_dma_pong ? DMACH_AUDIO_PIO_PONG : DMACH_AUDIO_PIO_PING;
+	dma_channel_hw_t *ch = &dma_hw->ch[ch_num];
+	dma_hw->intr = 1u << ch_num;
+	audio_pio_dma_pong = !audio_pio_dma_pong;
+
+	audio_ringbuf_head = (audio_ringbuf_head + 1) % RBUF_SLICES;
+
+	ch->write_addr = (uintptr_t)&audio_ringbuffer[audio_ringbuf_head * RBUF_SLICE_LEN];
+	ch->transfer_count = (RBUF_DATA_LEN-1)/2;
+
+	hsdaoh_update_head(1, audio_ringbuf_head);
+}
+
+void init_audio_pio_input(void)
+{
+	PIO pio = pio1;
+	uint offset = pio_add_program(pio, &pcm1802_fmt00_program);
+	uint sm_data = pio_claim_unused_sm(pio, true);
+	pcm1802_fmt00_program_init(pio, sm_data, offset, PCM1802_DATA_PIN);
+
+	dma_channel_config c;
+	c = dma_channel_get_default_config(DMACH_AUDIO_PIO_PING);
+	channel_config_set_chain_to(&c, DMACH_AUDIO_PIO_PONG);
+	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_data, false));
+	channel_config_set_read_increment(&c, false);
+	channel_config_set_write_increment(&c, true);
+	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+
+	dma_channel_configure(
+		DMACH_AUDIO_PIO_PING,
+		&c,
+		&audio_ringbuffer[0 * RBUF_SLICE_LEN],
+		&pio->rxf[sm_data],
+		(RBUF_DATA_LEN-1)/2,
+		false
+	);
+	c = dma_channel_get_default_config(DMACH_AUDIO_PIO_PONG);
+	channel_config_set_chain_to(&c, DMACH_AUDIO_PIO_PING);
+	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_data, false));
+	channel_config_set_read_increment(&c, false);
+	channel_config_set_write_increment(&c, true);
+	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+
+	dma_channel_configure(
+		DMACH_AUDIO_PIO_PONG,
+		&c,
+		&audio_ringbuffer[1 * RBUF_SLICE_LEN],
+		&pio->rxf[sm_data],
+		(RBUF_DATA_LEN-1)/2,
+		false
+	);
+
+	dma_hw->ints1 |= (1u << DMACH_AUDIO_PIO_PING) | (1u << DMACH_AUDIO_PIO_PONG);
+	dma_hw->inte1 |= (1u << DMACH_AUDIO_PIO_PING) | (1u << DMACH_AUDIO_PIO_PONG);
+	irq_set_exclusive_handler(DMA_IRQ_1, audio_pio_dma_irq_handler);
+	irq_set_enabled(DMA_IRQ_1, true);
+
+	dma_channel_start(DMACH_AUDIO_PIO_PING);
+}
+
 int main()
 {
 #ifdef OVERVOLT
@@ -140,11 +213,22 @@ int main()
 		CLOCKS_CLK_HSTX_DIV_INT_BITS
 	);
 
+	pll_init(pll_usb, 1, 1536 * MHZ, 4, 2);
+//	pll_init(pll_usb, 1, (983 * MHZ) + (40 * KHZ), 4, 2);
+
+	/* set USB clock to clk_usb/4 */
+	hw_write_masked(&clocks_hw->clk[clk_usb].div, 4 << CLOCKS_CLK_USB_DIV_INT_LSB, CLOCKS_CLK_USB_DIV_INT_BITS);
+
+	/* set GPOUT0 clock to USB PLL/10 -> 19.2 MHz, resulting in 75 kHz ADC sample rate (19.2M/256) */
+	clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB, 10);
+
 	stdio_init_all();
 
+	hsdaoh_set_aux_ringbuf(audio_ringbuffer);
 	hsdaoh_init(ringbuffer);
 	hsdaoh_start();
 	init_pio_input();
+	init_audio_pio_input();
 
 	while (1)
 		__wfi();
