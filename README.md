@@ -32,6 +32,11 @@ In addition to that, the apps folder contains a couple of example applications:
 
 This application uses the PIO to generate a 16-bit counter value which is written to a DMA ringbuffer, which is then streamed out via hsdaoh. The counter can be verified using the hsdaoh_test host application.
 
+### logic_analyzer
+
+Sample 16 GPIOs with the PIO and transfer the data, can be used as a 16 bit @ 32 MHz logic analyzer, or be adapted to 8 bit @ 64 MHz and so on.
+The IOs used for input are GP0-11, GP20-22 and GP26.
+
 ### internal_adc
 
 The data from the internal ADC is streamed out via USB. Default configuration is overclocking the ADC to 3.33 MS/s. Using the USB PLL and overvolting beyond VREG_VOLTAGE_MAX, up to 7.9 MS/s can be achieved.

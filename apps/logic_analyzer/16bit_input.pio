@@ -1,0 +1,78 @@
+;
+; Copyright (c) 2024 Steve Markgraf <steve@steve-m.de>
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+; 16 bit logic analyzer
+;
+
+.pio_version 0
+.program la_16bit_input
+
+public entry_point:
+
+.wrap_target
+	; GP0 - GP11 are contiguous, then come the HSTX pins which are already in use
+	; Next pins we can use are 20, 21, 22 and then 26, 27, 28
+	mov osr, pins	; Sample all 32 pins
+	in osr, 12	; shift values of GP0-GP11 to ISR
+	out null, 20	; shift out GP0-GP11 and discard GP12-GP19
+	in osr, 3	; shift in GP20 - GP22
+	out null, 6	; drop GP20 - GP25
+	in osr, 1	; shift in GP26 - now the ISR is full and the autopush is happening
+	in null, 16	; fill with zeroes so that data is in lower 16 bits
+	nop [3]
+.wrap
+
+% c-sdk {
+static inline void la_16bit_input_program_init(PIO pio, uint sm, uint offset, uint pin)
+{
+	pio_sm_config c = la_16bit_input_program_get_default_config(offset);
+
+	// Set the IN base pin to the provided `pin` parameter.
+	sm_config_set_in_pins(&c, pin);
+
+	// Set the pin directions to input at the PIO
+	// Set D0-D11 of the ADC as input
+	pio_sm_set_consecutive_pindirs(pio, sm, pin, 27, false);
+
+	// Connect these GPIOs to this PIO block
+	for (int i = pin; i < (pin+12); i++) {
+		pio_gpio_init(pio, pin + i);
+		gpio_set_pulls(pin + i, false, false);
+	}
+
+	// Connect these GPIOs to this PIO block
+	for (int i = 20; i < 23; i++) {
+		pio_gpio_init(pio, i);
+		gpio_set_pulls(i, false, false);
+	}
+
+	pio_gpio_init(pio, 26);
+	gpio_set_pulls(26, false, false);
+
+	sm_config_set_in_shift(
+		&c,
+		true,	// Shift-to-right = true
+		true,	// Autopush enabled
+		32	// Autopush threshold = 32
+	);
+
+	// required in order to set shift-to-right to true (for the out, null ops)
+	sm_config_set_out_shift(
+		&c,
+		true,	// Shift-to-right = true
+		false,	// Autopush disabled
+		1	// Autopush threshold: ignored
+	);
+
+	// We only receive, so disable the TX FIFO to make the RX FIFO deeper.
+	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+
+	sm_config_set_clkdiv(&c, 1.f);
+
+	// Load our configuration, and start the program from the beginning
+	pio_sm_init(pio, sm, offset, &c);
+	pio_sm_set_enabled(pio, sm, true);
+}
+%}
