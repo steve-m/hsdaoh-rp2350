@@ -72,7 +72,7 @@ uint16_t idle_line_buf[MODE_H_ACTIVE_PIXELS];
 uint32_t info_p[64];
 uint32_t info_len;
 
-int fifo_tail = 0;
+int fifo_tail = RBUF_SLICES-1;
 int fifo_head = 0;
 
 static uint32_t vblank_line_vsync_off[] = {
