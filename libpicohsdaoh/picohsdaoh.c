@@ -159,18 +159,22 @@ void hsdaoh_update_head(int head)
 static bool hstx_dma_pong = false;
 static uint v_scanline = 2;
 static bool vactive_cmdlist_posted = false;
-static uint16_t framecnt = 0;
 
-uint8_t metadata[] = {
-	/* 0xda7acab1 magic word for hsdaoh */
-	0x1, 0xb, 0xa, 0xc, 0xa, 0x7, 0xa, 0xd,
-	/* u16: placeholder for framecounter */
-	0, 0, 0, 0,
-	/* u8: pack_state */
-	0, 0,
-	/* u8: crc_config: CRC16 of last line */
-	1, 0,
+enum crc_config {
+	CRC_NONE,		/* No CRC, just 16 bit idle counter */
+	CRC16_1_LINE,		/* Line contains CRC of the last line */
+	CRC16_2_LINE		/* Line contains CRC of the line before the last line */
 };
+
+typedef struct
+{
+	uint32_t magic;
+	uint16_t framecounter;
+	uint8_t  pack_state;
+	uint8_t  crc_config;
+} __attribute__((packed, aligned(1))) metadata_t;
+
+metadata_t metadata = (metadata_t) { .magic = 0xda7acab1, .crc_config = CRC16_1_LINE };
 
 /* HSTX DMA IRQ handler, reconfigures the channel that just completed while
  * ther other channel is currently busy */
@@ -191,12 +195,8 @@ void __scratch_x("") hstx_dma_irq_handler()
 			ch->read_addr = (uintptr_t)info_p;
 			ch->transfer_count = info_len;
 
-			/* update frame counter in metadata */
-			metadata[8] = framecnt  & 0xf;
-			metadata[9] = (framecnt >> 4) & 0xf;
-			metadata[10] = (framecnt >> 8) & 0xf;
-			metadata[11] = (framecnt >> 12) & 0xf;
-			framecnt++;
+			/* increment framecounter*/
+			metadata.framecounter++;
 		} else {
 			ch->read_addr = (uintptr_t)vblank_line_vsync_on;
 			ch->transfer_count = count_of(vblank_line_vsync_on);
@@ -227,8 +227,13 @@ void __scratch_x("") hstx_dma_irq_handler()
 		uint16_t cur_active_line = v_scanline - (MODE_V_TOTAL_LINES - MODE_V_ACTIVE_LINES);
 
 		/* fill in metadata word (last word of line) */
-		if (cur_active_line < sizeof(metadata))
-			next_line[RBUF_SLICE_LEN - 1] |= (metadata[cur_active_line] << 12);
+		if (cur_active_line < (sizeof(metadata_t) * 2)) {
+			uint8_t *met_p = (uint8_t *)&metadata;
+			if (cur_active_line % 2)
+				next_line[RBUF_SLICE_LEN - 1] |= ((met_p[cur_active_line/2] & 0xf0) << 8);
+			else
+				next_line[RBUF_SLICE_LEN - 1] |= ((met_p[cur_active_line/2] & 0x0f) << 12);
+		}
 
 		/* on the second last word of the line, insert the CRC16 of the entire previous line */
 		next_line[RBUF_SLICE_LEN - 2] = dma_sniffer_get_data_accumulator() & 0xffff;
