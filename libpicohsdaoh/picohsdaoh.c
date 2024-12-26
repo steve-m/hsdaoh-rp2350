@@ -152,13 +152,16 @@ void hsdaoh_update_head(int head)
 	fifo_head = head;
 }
 
-#define DMACH_HSTX_PING 14
-#define DMACH_HSTX_PONG 15
-#define CRC16_INIT	0xffff
+#define DMACH_HSTX_START	13
+#define DMACH_HSTX_COUNT	3
+#define CRC16_INIT		0xffff
 
-static bool hstx_dma_pong = false;
-static uint v_scanline = 2;
+static uint8_t hstx_dma_curchan = 0;
+static uint16_t saved_crc;
+static uint v_scanline = 3;
 static bool vactive_cmdlist_posted = false;
+static uint8_t dma_sniff_pipelined_ch = 0;
+static bool dma_sniff_pipelined_disable = false;
 
 enum crc_config {
 	CRC_NONE,		/* No CRC, just 16 bit idle counter */
@@ -174,16 +177,32 @@ typedef struct
 	uint8_t  crc_config;
 } __attribute__((packed, aligned(1))) metadata_t;
 
-metadata_t metadata = (metadata_t) { .magic = 0xda7acab1, .crc_config = CRC16_1_LINE };
+metadata_t metadata = (metadata_t) { .magic = 0xda7acab1, .crc_config = CRC16_2_LINE };
 
 /* HSTX DMA IRQ handler, reconfigures the channel that just completed while
  * ther other channel is currently busy */
 void __scratch_x("") hstx_dma_irq_handler()
 {
-	uint ch_num = hstx_dma_pong ? DMACH_HSTX_PONG : DMACH_HSTX_PING;
+	/* This is a bit tricky and time critical, we pipeline three DMA transfers to avoid an
+	 * underrun, but the DMA sniffer that is used to calculate the CRC cannot be pipelined
+	 * and needs to be reconfigured right before the DMA transfer starts - so we have to
+	 * do that as fast as possible during blanking, before the next DMA transfer with
+	 * active video data, which is right about to start. */
+	if (dma_sniff_pipelined_ch) {
+		/* (re)initialize DMA CRC sniffer */
+		saved_crc = dma_sniffer_get_data_accumulator() & 0xffff;
+		dma_sniffer_set_data_accumulator(CRC16_INIT);
+		dma_sniffer_enable(dma_sniff_pipelined_ch, DMA_SNIFF_CTRL_CALC_VALUE_CRC16, true);
+		dma_sniff_pipelined_ch = 0;
+	} else if (dma_sniff_pipelined_disable) {
+		dma_sniffer_disable();
+		dma_sniff_pipelined_disable = false;
+	}
+
+	uint ch_num = hstx_dma_curchan + DMACH_HSTX_START;
+	hstx_dma_curchan = (hstx_dma_curchan + 1) % DMACH_HSTX_COUNT;
 	dma_channel_hw_t *ch = &dma_hw->ch[ch_num];
 	dma_hw->intr = 1u << ch_num;
-	hstx_dma_pong = !hstx_dma_pong;
 
 	/* for raw commands we need to use 32 bit DMA transfers */
 	ch->al1_ctrl = (ch->al1_ctrl & ~DMA_CH0_CTRL_TRIG_DATA_SIZE_BITS) | (DMA_SIZE_32 << DMA_CH0_CTRL_TRIG_DATA_SIZE_LSB);
@@ -191,7 +210,7 @@ void __scratch_x("") hstx_dma_irq_handler()
 	if (v_scanline >= MODE_V_FRONT_PORCH && v_scanline < (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH)) {
 		/* on first line of actual VSYNC, output data packet */
 		if (v_scanline == MODE_V_FRONT_PORCH) {
-			dma_sniffer_disable();
+			dma_sniff_pipelined_disable = true;
 			ch->read_addr = (uintptr_t)info_p;
 			ch->transfer_count = info_len;
 
@@ -235,12 +254,10 @@ void __scratch_x("") hstx_dma_irq_handler()
 				next_line[RBUF_SLICE_LEN - 1] |= ((met_p[cur_active_line/2] & 0x0f) << 12);
 		}
 
-		/* on the second last word of the line, insert the CRC16 of the entire previous line */
-		next_line[RBUF_SLICE_LEN - 2] = dma_sniffer_get_data_accumulator() & 0xffff;
+		/* on the second last word of the line, insert the CRC16 of the entire line before the last line */
+		next_line[RBUF_SLICE_LEN - 2] = saved_crc;
 
-		/* (re)initialize DMA CRC sniffer */
-		dma_sniffer_set_data_accumulator(CRC16_INIT);
-		dma_sniffer_enable(ch_num, DMA_SNIFF_CTRL_CALC_VALUE_CRC16, true);
+		dma_sniff_pipelined_ch = ch_num;
 
 		/* switch to 16 bit DMA transfer size for the actual data,
 		 * because for YCbCr422 TMDS channel 0 is unused */
@@ -266,7 +283,7 @@ void core1_entry()
 void hsdaoh_start(void)
 {
 	multicore_launch_core1(core1_entry);
-	dma_channel_start(DMACH_HSTX_PING);
+	dma_channel_start(DMACH_HSTX_START);
 }
 
 void hsdaoh_init(uint16_t *ringbuf)//struct hsdaoh_inst *inst, uint16_t *ringbuf)
@@ -338,38 +355,28 @@ void hsdaoh_init(uint16_t *ringbuf)//struct hsdaoh_inst *inst, uint16_t *ringbuf
 	for (int i = 12; i <= 19; ++i)
 		gpio_set_function(i, 0); // HSTX
 
-	/* Both channels are set up identically, to transfer a whole scanline and
-	 * then chain to the opposite channel. Each time a channel finishes, we
-	 * reconfigure the one that just finished, meanwhile the opposite channel
+	/* All channels are set up identically, to transfer a whole scanline and
+	 * then chain to the net channel. Each time a channel finishes, we
+	 * reconfigure the one that just finished, meanwhile another channel
 	 * is already making progress. */
-	dma_channel_config c;
-	c = dma_channel_get_default_config(DMACH_HSTX_PING);
-	channel_config_set_chain_to(&c, DMACH_HSTX_PONG);
-	channel_config_set_dreq(&c, DREQ_HSTX);
-	channel_config_set_sniff_enable(&c, true);
-	dma_channel_configure(
-		DMACH_HSTX_PING,
-		&c,
-		&hstx_fifo_hw->fifo,
-		vblank_line_vsync_off,
-		count_of(vblank_line_vsync_off),
-		false
-	);
-	c = dma_channel_get_default_config(DMACH_HSTX_PONG);
-	channel_config_set_chain_to(&c, DMACH_HSTX_PING);
-	channel_config_set_dreq(&c, DREQ_HSTX);
-	channel_config_set_sniff_enable(&c, true);
-	dma_channel_configure(
-		DMACH_HSTX_PONG,
-		&c,
-		&hstx_fifo_hw->fifo,
-		vblank_line_vsync_off,
-		count_of(vblank_line_vsync_off),
-		false
-	);
-
-	dma_hw->ints3 = (1u << DMACH_HSTX_PING) | (1u << DMACH_HSTX_PONG);
-	dma_hw->inte3 = (1u << DMACH_HSTX_PING) | (1u << DMACH_HSTX_PONG);
+	for (int i = 0; i < DMACH_HSTX_COUNT; i++) {
+		dma_channel_config c;
+		c = dma_channel_get_default_config(DMACH_HSTX_START + i);
+		int chain_to_ch = DMACH_HSTX_START + ((i + 1) % DMACH_HSTX_COUNT);
+		channel_config_set_chain_to(&c, chain_to_ch);
+		channel_config_set_dreq(&c, DREQ_HSTX);
+		channel_config_set_sniff_enable(&c, true);
+		dma_channel_configure(
+			DMACH_HSTX_START + i,
+			&c,
+			&hstx_fifo_hw->fifo,
+			vblank_line_vsync_off,
+			count_of(vblank_line_vsync_off),
+			false
+		);
+		dma_hw->ints3 |= 1u << (DMACH_HSTX_START + i);
+		dma_hw->inte3 |= 1u << (DMACH_HSTX_START + i);
+	}
 
 	/* give the DMA the priority over the CPU on the bus */
 	bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS | BUSCTRL_BUS_PRIORITY_DMA_R_BITS;

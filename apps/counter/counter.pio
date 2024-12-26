@@ -33,7 +33,7 @@ static inline void counter_program_init(PIO pio, uint sm, uint offset)
 	// disable the TX FIFO to make the RX FIFO deeper.
 	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
 
-	sm_config_set_clkdiv(&c, 4.f);
+	sm_config_set_clkdiv(&c, 1.75f);
 
 	// Load our configuration, and start the program from the beginning
 	pio_sm_init(pio, sm, offset, &c);

@@ -43,7 +43,7 @@
 #include "picohsdaoh.h"
 #include "counter.pio.h"
 
-#define SYS_CLK		250000
+#define SYS_CLK		336000
 
 #define DMACH_PIO_PING 0
 #define DMACH_PIO_PONG 1
@@ -116,12 +116,14 @@ void init_pio_input(void)
 
 int main()
 {
+	vreg_set_voltage(VREG_VOLTAGE_MAX);
+	sleep_ms(1);
 	set_sys_clock_khz(SYS_CLK, true);
 
-	/* set HSTX clock to sysclk/2 */
+	/* set HSTX clock to sysclk/1 */
 	hw_write_masked(
 		&clocks_hw->clk[clk_hstx].div,
-		2 << CLOCKS_CLK_HSTX_DIV_INT_LSB,
+		1 << CLOCKS_CLK_HSTX_DIV_INT_LSB,
 		CLOCKS_CLK_HSTX_DIV_INT_BITS
 	);
 

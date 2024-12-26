@@ -1,7 +1,7 @@
 # hsdaoh-rp2350 - High Speed Data Acquisition over HDMI
-## Stream up to 75 MByte/s from your Raspberry Pi Pico2 to your PC
+## Stream up to 128 MByte/s from your Raspberry Pi Pico2 to your PC
 
-Using $5 USB3 HDMI capture sticks based on the MacroSilicon MS2130, this project allows to stream out up to 75 MByte/s of real time data from an RP2350 (with overclocking) to a host computer with USB3.
+Using $5 USB3 HDMI capture sticks based on the MacroSilicon MS2130, this project allows to stream out up to 128 MByte/s of real time data from an RP2350 (with overclocking) to a host computer with USB3.
 For more information and the host library, see the [main repository](https://github.com/steve-m/hsdaoh) and the [talk at OsmoDevcon '24](https://media.ccc.de/v/osmodevcon2024-200-low-cost-high-speed-data-acquisition-over-hdmi).
 
 ![Raspberry Pi Pico2 with MS2130 stick](https://steve-m.de/projects/hsdaoh/pico2_hsdaoh.jpg)
