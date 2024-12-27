@@ -68,7 +68,8 @@
 #define HSTX_CMD_NOP		(0xfu << 12)
 
 uint16_t *ring_buf = NULL;
-uint16_t idle_line_buf[MODE_H_ACTIVE_PIXELS];
+uint16_t idle_line_buf1[MODE_H_ACTIVE_PIXELS];
+uint16_t idle_line_buf2[MODE_H_ACTIVE_PIXELS];
 uint32_t info_p[64];
 uint32_t info_len;
 
@@ -232,18 +233,17 @@ void __scratch_x("") hstx_dma_irq_handler()
 		/* Output of actual data in active video lines */
 		uint16_t *next_line;
 		int next_tail = (fifo_tail + 1) % RBUF_SLICES;
+		uint16_t cur_active_line = v_scanline - (MODE_V_TOTAL_LINES - MODE_V_ACTIVE_LINES);
 
 		if (fifo_head == next_tail) {
 			/* No data to send, use idle line */
-			next_line = idle_line_buf;
+			next_line = (cur_active_line % 2) ? idle_line_buf1 : idle_line_buf2;
 			next_line[RBUF_SLICE_LEN - 1] = 0;
 		} else {
 			next_line = &ring_buf[fifo_tail * RBUF_SLICE_LEN];
 			fifo_tail = next_tail;
 			next_line[RBUF_SLICE_LEN - 1] = RBUF_DATA_LEN;
 		}
-
-		uint16_t cur_active_line = v_scanline - (MODE_V_TOTAL_LINES - MODE_V_ACTIVE_LINES);
 
 		/* fill in metadata word (last word of line) */
 		if (cur_active_line < (sizeof(metadata_t) * 2)) {
