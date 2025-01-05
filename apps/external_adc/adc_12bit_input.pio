@@ -22,8 +22,7 @@ public entry_point:
 	;----------------------------------------------------------------------------------------
 	in pins, 12     side 1		; 12 bits of first sample in ISR					SAMP
 	nop             side 1
-	nop             side 0
-	nop             side 0
+	nop[1]          side 0
 	; ISR is now:   0 0 0 0 A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00
 	;----------------------------------------------------------------------------------------
 	mov osr, pins   side 1		; 12 bits of second sample in OSR					SAMP
@@ -101,7 +100,7 @@ static inline void adc_12bit_input_program_init(PIO pio, uint sm, uint offset, u
 	// We only receive, so disable the TX FIFO to make the RX FIFO deeper.
 	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
 
-	sm_config_set_clkdiv(&c, 2.f);
+	sm_config_set_clkdiv(&c, 1.f);
 
 	// Load our configuration, and start the program from the beginning
 	pio_sm_init(pio, sm, offset, &c);

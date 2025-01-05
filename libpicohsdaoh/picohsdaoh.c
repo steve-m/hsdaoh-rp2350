@@ -256,6 +256,7 @@ void __scratch_x("") hstx_dma_irq_handler()
 
 		/* on the second last word of the line, insert the CRC16 of the entire line before the last line */
 		next_line[RBUF_SLICE_LEN - 2] = saved_crc;
+		next_line[RBUF_SLICE_LEN - 3] = 0;
 
 		dma_sniff_pipelined_ch = ch_num;
 

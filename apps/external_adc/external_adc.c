@@ -43,11 +43,12 @@
 #include "picohsdaoh.h"
 #include "adc_12bit_input.pio.h"
 
-/* The PIO is running with sys_clk/2, and needs 4 cycles per sample,
- * so the ADC clock is sys_clk/8 */
-#define SYS_CLK		320000	// 40 MHz ADC clock
-//#define SYS_CLK	384000	// 48 MHz ADC clock
-//#define SYS_CLK	402000	// 50.25 MHz ADC clock, maximum that works on my Pico2 (with overvolting)
+/* The PIO is running with sys_clk/1, and needs 4 cycles per sample,
+ * so the ADC clock is sys_clk/4 */
+#define SYS_CLK		160000	// 40 MHz ADC clock
+//#define SYS_CLK	192000	// 48 MHz ADC clock
+//#define SYS_CLK	320000	// 80 MHz ADC clock
+//#define SYS_CLK	384000	// 96 MHz ADC clock, maximum that works on my Pico2 (with overvolting)
 
 // ADC is attached to GP0 - GP11 with clock on GP20
 #define PIO_INPUT_PIN_BASE 0
@@ -124,16 +125,18 @@ void init_pio_input(void)
 
 int main()
 {
+#ifdef OVERVOLT
 	/* set maximum 'allowed' voltage without voiding warranty */
 	vreg_set_voltage(VREG_VOLTAGE_MAX);
 	sleep_ms(1);
+#endif
 
 	set_sys_clock_khz(SYS_CLK, true);
 
-	/* set HSTX clock to sysclk/2 */
+	/* set HSTX clock to sysclk/1 */
 	hw_write_masked(
 		&clocks_hw->clk[clk_hstx].div,
-		2 << CLOCKS_CLK_HSTX_DIV_INT_LSB,
+		1 << CLOCKS_CLK_HSTX_DIV_INT_LSB,
 		CLOCKS_CLK_HSTX_DIV_INT_BITS
 	);
 

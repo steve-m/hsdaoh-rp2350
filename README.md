@@ -44,7 +44,7 @@ The data from the internal ADC is streamed out via USB. Default configuration is
 ### external_adc
 
 This app contains a PIO program that reads the data from a 12-bit ADC connected to GP0-GP11, outputs the ADC clock on GP20, and packs the 12 bit samples to 16-bit words to achieve maximum throughput.
-It is meant to be used with cheap AD9226 ADC boards. The default setting is overclocking the RP2350 to 320 MHz and driving the ADC with a 40 MHz clock. With higher overclocking up to 50.25 MHz ADC clock can be used.
+It is meant to be used with cheap AD9226 ADC boards. The default setting is overclocking the RP2350 to 160 MHz and driving the ADC with a 40 MHz clock. With higher overclocking up to 96 MHz ADC clock can be used.
 
 This can be used for sampling the IF of a tuner/downcoverter, as a direct-sampling HF SDR, or for capturing a video signal e.g. with [vhsdecode](https://github.com/oyvindln/vhs-decode).
 For the vhsdecode use-case, there is also an [adapter PCB](https://github.com/Sev5000/Pico2_12bitADC_PCMAudio).
