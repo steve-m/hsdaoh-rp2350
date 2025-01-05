@@ -80,7 +80,7 @@ static inline void adc_12bit_input_program_init(PIO pio, uint sm, uint offset, u
 
 	// Connect these GPIOs to this PIO block
 	for (int i = pin; i < (pin+12); i++)
-		pio_gpio_init(pio, pin + i);
+		pio_gpio_init(pio, i);
 
 	sm_config_set_in_shift(
 		&c,
