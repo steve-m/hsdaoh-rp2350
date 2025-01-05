@@ -55,7 +55,7 @@
 
 static bool dma_adc_pong = false;
 uint16_t ringbuffer[RBUF_TOTAL_LEN];
-int ringbuf_head = 0;
+int ringbuf_head = 2;
 
 void __scratch_y("") adc_dma_irq_handler()
 {
