@@ -1,4 +1,5 @@
 add_subdirectory(counter)
 add_subdirectory(external_adc)
+add_subdirectory(dual_external_adc)
 add_subdirectory(internal_adc)
 add_subdirectory(logic_analyzer)

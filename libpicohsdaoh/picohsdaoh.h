@@ -22,16 +22,35 @@
 )
 
 // CRC word and length/metadata word, so 2 reserved words
-// padded to 3 so that for the 12bit/16bit packed format
-// each line starts with word 0
-#define NUM_RESERVED_WORDS	3
+#define NUM_RESERVED_WORDS	2
 #define RBUF_SLICES		16
 #define RBUF_SLICE_LEN		MODE_H_ACTIVE_PIXELS
-#define RBUF_DATA_LEN		(RBUF_SLICE_LEN - NUM_RESERVED_WORDS)
+#define RBUF_MAX_DATA_LEN	(RBUF_SLICE_LEN - NUM_RESERVED_WORDS)
 #define RBUF_TOTAL_LEN		(RBUF_SLICE_LEN * RBUF_SLICES)
 
+#define MAX_STREAMS		8
+
+enum crc_config {
+	CRC_NONE,		/* No CRC, just 16 bit idle counter */
+	CRC16_1_LINE,		/* Line contains CRC of the last line */
+	CRC16_2_LINE		/* Line contains CRC of the line before the last line */
+};
+
+typedef struct
+{
+	uint32_t magic;
+	uint16_t framecounter;
+	uint8_t  reserved1;
+	uint8_t  crc_config;
+	uint16_t version;
+	uint32_t flags;
+	uint8_t  reserved2[116];
+	uint8_t  stream_cnt;
+} __attribute__((packed, aligned(1))) metadata_t;
+
 void hsdaoh_start(void);
-void hsdaoh_init(uint16_t *ringbuf);
-void hsdaoh_update_head(int head);
+void hsdaoh_init(void);
+void hsdaoh_update_head(int stream_id, int head);
+int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, uint length, uint16_t *ringbuf);
 
 #endif

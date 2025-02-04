@@ -54,7 +54,7 @@ public entry_point:
 
 
 	in osr, 4       side 0		; send out remaining part of third sample and fourth sample		AUTOPUSH
-	; ISR is now   0 0 0 0 D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00 C11 C10 C09 C08
+	; ISR is now   D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00 C11 C10 C09 C08
 	nop             side 0
 	;----------------------------------------------------------------------------------------
 .wrap

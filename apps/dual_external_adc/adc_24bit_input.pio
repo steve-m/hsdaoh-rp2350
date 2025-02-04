@@ -1,0 +1,110 @@
+;
+; Copyright (c) 2024-2025 Steve Markgraf <steve@steve-m.de>
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+; Sample 2x12 bit parallel ADC (AD9226) every 4 PIO cycles on rising clock edge,
+; pack four 24 bit samples in three 32 bit words
+; ADC clock output as side-set
+;
+; Data being pushed to the FIFO, four 12 bit samples A-D
+; First word:  A23 A22 A21 A20 A19 A18 A17 A16 A15 A14 A13 A12 A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00 B07 B06 B05 B04 B03 B02 B01 B00
+; Second word: B23 B22 B21 B20 B19 B18 B17 B16 B15 B14 B13 B12 B11 B10 B09 B08 C15 C14 C13 C12 C11 C10 C09 C08 C07 C06 C05 C04 C03 C02 C01 C00
+; Third word:  D23 D22 D21 D20 D19 D18 D17 D16 D15 D14 D13 D12 D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00 C23 C22 C21 C20 C19 C18 C17 C16
+
+.pio_version 1
+.program adc_12bit_input
+.side_set 3
+
+public entry_point:
+
+.wrap_target
+	;----------------------------------------------------------------------------------------
+	in pins, 24     side 5		; 24 bits of first sample in ISR					SAMP
+	nop             side 5
+	nop[1]          side 0
+	; ISR is now:   0 0 0 0 0 0 0 0 A23 A22 A21 A20 A19 A18 A17 A16 A15 A14 A13 A12 A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00
+	;----------------------------------------------------------------------------------------
+
+	mov osr, pins   side 5		; 24 bits of second sample in OSR					SAMP
+	; OSR is now:   0 0 0 0 0 0 0 0 B23 B22 B21 B20 B19 B18 B17 B16 B15 B14 B13 B12 B11 B10 B09 B08 B07 B06 B05 B04 B03 B02 B01 B00
+
+	in osr, 8       side 5		; 24 of first, 8 of second sample in ISR				AUTOPUSH
+	; ISR is now:   A23 A22 A21 A20 A19 A18 A17 A16 A15 A14 A13 A12 A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00 B07 B06 B05 B04 B03 B02 B01 B00
+
+	out null, 8     side 0
+	; OSR is now:   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 B23 B22 B21 B20 B19 B18 B17 B16 B15 B14 B13 B12 B11 B10 B09 B08
+
+	nop             side 0
+	;----------------------------------------------------------------------------------------
+	mov x, pins     side 5		; 24 bits of third sample in X, 16 of second remaining in OSR		SAMP
+	in osr, 16      side 5		; 16 of second sample now in ISR, OSR is now empty an can be re-used
+	; ISR is now:   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 B23 B22 B21 B20 B19 B18 B17 B16 B15 B14 B13 B12 B11 B10 B09 B08
+
+	mov osr, x      side 0
+	; OSR is now   0 0 0 0 0 0 0 0 C23 C22 C21 C20 C19 C18 C17 C16 C15 C14 C13 C12 C11 C10 C09 C08 C07 C06 C05 C04 C03 C02 C01 C00
+
+	in osr, 16       side 0		; autopush happening							AUTOPUSH
+	; ISR is now:   B23 B22 B21 B20 B19 B18 B17 B16 B15 B14 B13 B12 B11 B10 B09 B08 C15 C14 C13 C12 C11 C10 C09 C08 C07 C06 C05 C04 C03 C02 C01 C00
+	;----------------------------------------------------------------------------------------
+	in pins, 24     side 5		; sample fourth sample to ISR						SAMP
+	; ISR is now   0 0 0 0 0 0 0 0 D23 D22 D21 D20 D19 D18 D17 D16 D15 D14 D13 D12 D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00
+
+	out null, 16    side 5
+	; OSR is now   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 C23 C22 C21 C20 C19 C18 C17 C16
+
+	in osr, 8       side 0		; send out remaining part of third sample and fourth sample		AUTOPUSH
+	; ISR is now   D23 D22 D21 D20 D19 D18 D17 D16 D15 D14 D13 D12 D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00 C23 C22 C21 C20 C19 C18 C17 C16
+	nop             side 0
+	;----------------------------------------------------------------------------------------
+.wrap
+
+% c-sdk {
+static inline void adc_12bit_input_program_init(PIO pio, uint sm, uint offset, uint pin, uint clk_pin)
+{
+	pio_sm_config c = adc_12bit_input_program_get_default_config(offset);
+
+	// Set the IN base pin to the provided `pin` parameter.
+	sm_config_set_in_pins(&c, pin);
+
+	// configure CLK pin for side-set
+	sm_config_set_sideset_pins(&c, clk_pin);
+	sm_config_set_sideset(&c, 3, false, false);
+
+	pio_sm_set_consecutive_pindirs(pio, sm, clk_pin, 3, true);
+	pio_gpio_init(pio, clk_pin);
+	pio_gpio_init(pio, clk_pin+2);
+
+	// Set the pin directions to input at the PIO
+	// Set D0-D23 of the ADC(s) as input
+	pio_sm_set_consecutive_pindirs(pio, sm, pin, 24, false);
+
+	// Connect these GPIOs to this PIO block
+	for (int i = pin; i < (pin+24); i++)
+		pio_gpio_init(pio, i);
+
+	sm_config_set_in_shift(
+		&c,
+		false,	// Shift-to-right = false (i.e. shift to left)
+		true,	// Autopush enabled
+		32	// Autopush threshold = 32
+	);
+
+	// required in order to set shift-to-right to true (for the out, null ops)
+	sm_config_set_out_shift(
+		&c,
+		true,	// Shift-to-right = true
+		false,	// Autopush disabled
+		1	// Autopush threshold: ignored
+	);
+
+	// We only receive, so disable the TX FIFO to make the RX FIFO deeper.
+	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+
+	sm_config_set_clkdiv(&c, 2.f);
+
+	// Load our configuration, and start the program from the beginning
+	pio_sm_init(pio, sm, offset, &c);
+	pio_sm_set_enabled(pio, sm, true);
+}
+%}

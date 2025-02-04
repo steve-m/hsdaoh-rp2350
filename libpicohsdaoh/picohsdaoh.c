@@ -2,7 +2,7 @@
  * hsdaoh - High Speed Data Acquisition over MS213x USB3 HDMI capture sticks
  * Implementation for the Raspberry Pi RP2350 HSTX peripheral
  *
- * Copyright (c) 2024 by Steve Markgraf <steve@steve-m.de>
+ * Copyright (c) 2024-2025 by Steve Markgraf <steve@steve-m.de>
  *
  * based on the pico-examples/hstx/dvi_out_hstx_encoder example:
  * Copyright (c) 2024 Raspberry Pi (Trading) Ltd.
@@ -67,14 +67,24 @@
 #define HSTX_CMD_TMDS_REPEAT	(0x3u << 12)
 #define HSTX_CMD_NOP		(0xfu << 12)
 
-uint16_t *ring_buf = NULL;
 uint16_t idle_line_buf1[MODE_H_ACTIVE_PIXELS];
 uint16_t idle_line_buf2[MODE_H_ACTIVE_PIXELS];
 uint32_t info_p[64];
 uint32_t info_len;
 
-int fifo_tail = RBUF_SLICES-1;
-int fifo_head = 0;
+typedef struct
+{
+	bool active;
+	uint16_t *rbuf;
+	uint tail;
+	uint head;
+	uint16_t format;
+	uint32_t srate;
+	uint16_t len;
+	uint64_t data_cnt;
+} stream_t;
+
+stream_t streams[MAX_STREAMS];
 
 static uint32_t vblank_line_vsync_off[] = {
 	HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH,
@@ -148,9 +158,9 @@ void init_info_packet(void)
 	info_len = len;
 }
 
-void hsdaoh_update_head(int head)
+void hsdaoh_update_head(int stream_id, int head)
 {
-	fifo_head = head;
+	streams[stream_id].head = head;
 }
 
 #define DMACH_HSTX_START	13
@@ -164,21 +174,7 @@ static bool vactive_cmdlist_posted = false;
 static uint8_t dma_sniff_pipelined_ch = 0;
 static bool dma_sniff_pipelined_disable = false;
 
-enum crc_config {
-	CRC_NONE,		/* No CRC, just 16 bit idle counter */
-	CRC16_1_LINE,		/* Line contains CRC of the last line */
-	CRC16_2_LINE		/* Line contains CRC of the line before the last line */
-};
-
-typedef struct
-{
-	uint32_t magic;
-	uint16_t framecounter;
-	uint8_t  pack_state;
-	uint8_t  crc_config;
-} __attribute__((packed, aligned(1))) metadata_t;
-
-metadata_t metadata = (metadata_t) { .magic = 0xda7acab1, .crc_config = CRC16_2_LINE };
+metadata_t metadata = (metadata_t) { .magic = 0xda7acab1, .crc_config = CRC16_2_LINE, .version = 1 };
 
 /* HSTX DMA IRQ handler, reconfigures the channel that just completed while
  * ther other channel is currently busy */
@@ -231,18 +227,24 @@ void __scratch_x("") hstx_dma_irq_handler()
 		vactive_cmdlist_posted = true;
 	} else {
 		/* Output of actual data in active video lines */
-		uint16_t *next_line;
-		int next_tail = (fifo_tail + 1) % RBUF_SLICES;
 		uint16_t cur_active_line = v_scanline - (MODE_V_TOTAL_LINES - MODE_V_ACTIVE_LINES);
+		uint16_t *next_line = (cur_active_line % 2) ? idle_line_buf1 : idle_line_buf2;
+		next_line[RBUF_SLICE_LEN - 1] = 0;
 
-		if (fifo_head == next_tail) {
-			/* No data to send, use idle line */
-			next_line = (cur_active_line % 2) ? idle_line_buf1 : idle_line_buf2;
-			next_line[RBUF_SLICE_LEN - 1] = 0;
-		} else {
-			next_line = &ring_buf[fifo_tail * RBUF_SLICE_LEN];
-			fifo_tail = next_tail;
-			next_line[RBUF_SLICE_LEN - 1] = RBUF_DATA_LEN;
+		for (uint i = 0; i < MAX_STREAMS; i++) {
+			stream_t *stream = &streams[i];
+
+			if (!stream->active)
+				continue;
+
+			int next_tail = (stream->tail + 1) % RBUF_SLICES;
+			if (stream->head != next_tail) {
+				next_line = &stream->rbuf[stream->tail * RBUF_SLICE_LEN];
+				stream->tail = next_tail;
+				next_line[RBUF_SLICE_LEN - 1] = stream->len;
+				next_line[RBUF_SLICE_LEN - 3] = i; // stream ID
+				break;
+			}
 		}
 
 		/* fill in metadata word (last word of line) */
@@ -256,8 +258,6 @@ void __scratch_x("") hstx_dma_irq_handler()
 
 		/* on the second last word of the line, insert the CRC16 of the entire line before the last line */
 		next_line[RBUF_SLICE_LEN - 2] = saved_crc;
-		next_line[RBUF_SLICE_LEN - 3] = 0;
-
 		dma_sniff_pipelined_ch = ch_num;
 
 		/* switch to 16 bit DMA transfer size for the actual data,
@@ -287,9 +287,28 @@ void hsdaoh_start(void)
 	dma_channel_start(DMACH_HSTX_START);
 }
 
-void hsdaoh_init(uint16_t *ringbuf)//struct hsdaoh_inst *inst, uint16_t *ringbuf)
+int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, uint length, uint16_t *ringbuf)
 {
-	ring_buf = ringbuf;
+	if (stream_id >= MAX_STREAMS)
+		return -1;
+
+	stream_t *stream = &streams[stream_id];
+	stream->rbuf = ringbuf;
+	stream->format = format;
+	stream->srate = samplerate;
+	stream->len = length;
+	stream->tail = RBUF_SLICES-1;
+	stream->head = 0;
+	stream->data_cnt = 0;
+	stream->active = true;
+
+	return 0;
+}
+
+void hsdaoh_init(void)
+{
+	for (uint i = 0; i < MAX_STREAMS; i++)
+		streams[i].active = false;
 
 	init_info_packet();
 

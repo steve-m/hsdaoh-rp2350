@@ -42,24 +42,21 @@
 #include "hardware/pio.h"
 
 #include "picohsdaoh.h"
-#include "adc_12bit_input.pio.h"
+#include "adc_24bit_input.pio.h"
 #include "pcm1802_fmt00.pio.h"
 
-/* The PIO is running with sys_clk/1, and needs 4 cycles per sample,
- * so the ADC clock is sys_clk/4 */
-#define SYS_CLK		160000	// 40 MHz ADC clock
-//#define SYS_CLK	192000	// 48 MHz ADC clock
-//#define SYS_CLK	320000	// 80 MHz ADC clock
-//#define SYS_CLK	384000	// 96 MHz ADC clock, maximum that works on my Pico2 (with overvolting)
+/* The PIO is running with sys_clk/2, and needs 4 cycles per sample,
+ * so the ADC clock is sys_clk/8 */
+#define SYS_CLK		320000	// 40 MHz ADC clock
 
-// For alignment of 3x16 bit words in the payload, so that every line starts with word 0
-#define ADC_DATA_LEN	(RBUF_SLICE_LEN - 3)
+// For alignment of 3x32 bit words in the payload, so that every line starts with word 0
+#define ADC_DATA_LEN	(RBUF_SLICE_LEN - 6)
 
 // Same here for 2x32 bit words
 #define AUDIO_DATA_LEN	(RBUF_SLICE_LEN - 4)
 
 // ADC is attached to GP0 - GP11 with clock on GP20
-#define PIO_INPUT_PIN_BASE 0
+#define PIO_INPUT_PIN_BASE 23
 #define PIO_OUTPUT_CLK_PIN 20
 
 #define DMACH_PIO_PING 0
@@ -79,7 +76,7 @@ void __scratch_y("") pio_dma_irq_handler()
 	ringbuf_head = (ringbuf_head + 1) % RBUF_SLICES;
 
 	ch->write_addr = (uintptr_t)&ringbuffer[ringbuf_head * RBUF_SLICE_LEN];
-	ch->transfer_count = ADC_DATA_LEN;
+	ch->transfer_count = ADC_DATA_LEN/2;
 
 	hsdaoh_update_head(0, ringbuf_head);
 }
@@ -87,9 +84,16 @@ void __scratch_y("") pio_dma_irq_handler()
 void init_pio_input(void)
 {
 	PIO pio = pio0;
+
+	/* move up GPIO base of PIO to access all ADC pins */
+	pio_set_gpio_base(pio, 16);
+
 	uint offset = pio_add_program(pio, &adc_12bit_input_program);
 	uint sm_data = pio_claim_unused_sm(pio, true);
+
+
 	adc_12bit_input_program_init(pio, sm_data, offset, PIO_INPUT_PIN_BASE, PIO_OUTPUT_CLK_PIN);
+
 
 	dma_channel_config c;
 	c = dma_channel_get_default_config(DMACH_PIO_PING);
@@ -97,14 +101,14 @@ void init_pio_input(void)
 	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_data, false));
 	channel_config_set_read_increment(&c, false);
 	channel_config_set_write_increment(&c, true);
-	channel_config_set_transfer_data_size(&c, DMA_SIZE_16);
+	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
 
 	dma_channel_configure(
 		DMACH_PIO_PING,
 		&c,
 		&ringbuffer[0 * RBUF_SLICE_LEN],
 		&pio->rxf[sm_data],
-		ADC_DATA_LEN,
+		ADC_DATA_LEN/2,
 		false
 	);
 	c = dma_channel_get_default_config(DMACH_PIO_PONG);
@@ -112,14 +116,14 @@ void init_pio_input(void)
 	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_data, false));
 	channel_config_set_read_increment(&c, false);
 	channel_config_set_write_increment(&c, true);
-	channel_config_set_transfer_data_size(&c, DMA_SIZE_16);
+	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
 
 	dma_channel_configure(
 		DMACH_PIO_PONG,
 		&c,
 		&ringbuffer[1 * RBUF_SLICE_LEN],
 		&pio->rxf[sm_data],
-		ADC_DATA_LEN,
+		ADC_DATA_LEN/2,
 		false
 	);
 
@@ -131,7 +135,7 @@ void init_pio_input(void)
 	dma_channel_start(DMACH_PIO_PING);
 }
 
-#define PCM1802_DATA_PIN	22
+#define PCM1802_DATA_PIN	0
 
 #define DMACH_AUDIO_PIO_PING 2
 #define DMACH_AUDIO_PIO_PONG 3
@@ -158,6 +162,9 @@ void __scratch_y("") audio_pio_dma_irq_handler()
 void init_audio_pio_input(void)
 {
 	PIO pio = pio1;
+
+	pio_set_gpio_base(pio, 0);
+
 	uint offset = pio_add_program(pio, &pcm1802_fmt00_program);
 	uint sm_data = pio_claim_unused_sm(pio, true);
 	pcm1802_fmt00_program_init(pio, sm_data, offset, PCM1802_DATA_PIN);
@@ -202,6 +209,8 @@ void init_audio_pio_input(void)
 	dma_channel_start(DMACH_AUDIO_PIO_PING);
 }
 
+#define OVERVOLT 1
+
 int main()
 {
 #ifdef OVERVOLT
@@ -231,7 +240,7 @@ int main()
 	stdio_init_all();
 
 	hsdaoh_init();
-	hsdaoh_add_stream(0, 1, (SYS_CLK/4) * 1000, ADC_DATA_LEN, ringbuffer);
+	hsdaoh_add_stream(0, 1, (SYS_CLK/8) * 1000, ADC_DATA_LEN, ringbuffer);
 	hsdaoh_add_stream(1, 1, 75000, AUDIO_DATA_LEN, audio_ringbuffer);
 	hsdaoh_start();
 	init_pio_input();

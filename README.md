@@ -47,9 +47,13 @@ This app contains a PIO program that reads the data from a 12-bit ADC connected 
 It is meant to be used with cheap AD9226 ADC boards. The default setting is overclocking the RP2350 to 160 MHz and driving the ADC with a 40 MHz clock. With higher overclocking up to 96 MHz ADC clock can be used.
 
 This can be used for sampling the IF of a tuner/downcoverter, as a direct-sampling HF SDR, or for capturing a video signal e.g. with [vhsdecode](https://github.com/oyvindln/vhs-decode).
-For the vhsdecode use-case, there is also an [adapter PCB](https://github.com/Sev5000/Pico2_12bitADC_PCMAudio).
+For the vhsdecode use-case, there is also an [adapter PCB](https://github.com/Sev5000/Pico2_12bitADC_PCMAudio). It also supports sampling a PCM1802 audio ADC board.
 
 ![Pico2 with AD9226 ADC board](https://steve-m.de/projects/hsdaoh/rp2350_external_adc_rot.jpg)
+
+### dual_external_adc
+
+Similar to the external_adc app, but samples two 12 bit ADCs connected to a RP2350B, as well as two PCM1802 modules. Intended for use with vhs-decode, see [this PCB](https://github.com/Sev5000/RP2350B_DualADC_DualPCM) for the matching hardware.
 
 ## Credits
 

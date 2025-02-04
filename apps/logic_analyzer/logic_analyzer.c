@@ -66,9 +66,9 @@ void __scratch_y("") pio_dma_irq_handler()
 	ringbuf_head = (ringbuf_head + 1) % RBUF_SLICES;
 
 	ch->write_addr = (uintptr_t)&ringbuffer[ringbuf_head * RBUF_SLICE_LEN];
-	ch->transfer_count = RBUF_DATA_LEN;
+	ch->transfer_count = RBUF_MAX_DATA_LEN;
 
-	hsdaoh_update_head(ringbuf_head);
+	hsdaoh_update_head(0, ringbuf_head);
 }
 
 void init_pio_input(void)
@@ -91,7 +91,7 @@ void init_pio_input(void)
 		&c,
 		&ringbuffer[0 * RBUF_SLICE_LEN],
 		&pio->rxf[sm_data],
-		RBUF_DATA_LEN,
+		RBUF_MAX_DATA_LEN,
 		false
 	);
 	c = dma_channel_get_default_config(DMACH_PIO_PONG);
@@ -106,7 +106,7 @@ void init_pio_input(void)
 		&c,
 		&ringbuffer[1 * RBUF_SLICE_LEN],
 		&pio->rxf[sm_data],
-		RBUF_DATA_LEN,
+		RBUF_MAX_DATA_LEN,
 		false
 	);
 
@@ -135,7 +135,8 @@ int main()
 
 	stdio_init_all();
 
-	hsdaoh_init(ringbuffer);
+	hsdaoh_init();
+	hsdaoh_add_stream(0, 1, (SYS_CLK/8) * 1000, RBUF_MAX_DATA_LEN, ringbuffer);
 	hsdaoh_start();
 	init_pio_input();
 
