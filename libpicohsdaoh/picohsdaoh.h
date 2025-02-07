@@ -21,8 +21,8 @@
 	MODE_V_BACK_PORCH  + MODE_V_ACTIVE_LINES \
 )
 
-// CRC word and length/metadata word, so 2 reserved words
-#define NUM_RESERVED_WORDS	2
+// stream ID, CRC word and length/metadata word, so 3 reserved words
+#define NUM_RESERVED_WORDS	3
 #define RBUF_SLICES		16
 #define RBUF_SLICE_LEN		MODE_H_ACTIVE_PIXELS
 #define RBUF_MAX_DATA_LEN	(RBUF_SLICE_LEN - NUM_RESERVED_WORDS)
