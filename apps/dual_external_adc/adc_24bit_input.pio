@@ -13,7 +13,7 @@
 ; Third word:  D23 D22 D21 D20 D19 D18 D17 D16 D15 D14 D13 D12 D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00 C23 C22 C21 C20 C19 C18 C17 C16
 
 .pio_version 1
-.program adc_12bit_input
+.program adc_24bit_input
 .side_set 3
 
 public entry_point:
@@ -60,9 +60,9 @@ public entry_point:
 .wrap
 
 % c-sdk {
-static inline void adc_12bit_input_program_init(PIO pio, uint sm, uint offset, uint pin, uint clk_pin)
+static inline void adc_24bit_input_program_init(PIO pio, uint sm, uint offset, uint pin, uint clk_pin)
 {
-	pio_sm_config c = adc_12bit_input_program_get_default_config(offset);
+	pio_sm_config c = adc_24bit_input_program_get_default_config(offset);
 
 	// Set the IN base pin to the provided `pin` parameter.
 	sm_config_set_in_pins(&c, pin);

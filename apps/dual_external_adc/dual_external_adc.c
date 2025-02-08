@@ -2,7 +2,7 @@
  * hsdaoh - High Speed Data Acquisition over MS213x USB3 HDMI capture sticks
  * Implementation for the Raspberry Pi RP2350 HSTX peripheral
  *
- * External 12-bit ADC example, connected to the PIO
+ * Dual External 12-bit ADC example, connected to the PIO
  *
  * Copyright (c) 2024-2025 by Steve Markgraf <steve@steve-m.de>
  *
@@ -44,6 +44,10 @@
 #include "picohsdaoh.h"
 #include "adc_24bit_input.pio.h"
 #include "pcm1802_fmt00.pio.h"
+
+#if (PICO_PIO_USE_GPIO_BASE != 1)
+#warning "PICO_PIO_USE_GPIO_BASE is not set to 1, this application will not work correctly!"
+#endif
 
 /* The PIO is running with sys_clk/2, and needs 4 cycles per sample,
  * so the ADC clock is sys_clk/8 */
@@ -88,12 +92,10 @@ void init_pio_input(void)
 	/* move up GPIO base of PIO to access all ADC pins */
 	pio_set_gpio_base(pio, 16);
 
-	uint offset = pio_add_program(pio, &adc_12bit_input_program);
+	uint offset = pio_add_program(pio, &adc_24bit_input_program);
 	uint sm_data = pio_claim_unused_sm(pio, true);
 
-
-	adc_12bit_input_program_init(pio, sm_data, offset, PIO_INPUT_PIN_BASE, PIO_OUTPUT_CLK_PIN);
-
+	adc_24bit_input_program_init(pio, sm_data, offset, PIO_INPUT_PIN_BASE, PIO_OUTPUT_CLK_PIN);
 
 	dma_channel_config c;
 	c = dma_channel_get_default_config(DMACH_PIO_PING);

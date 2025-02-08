@@ -54,6 +54,9 @@ For the vhsdecode use-case, there is also an [adapter PCB](https://github.com/Se
 ### dual_external_adc
 
 Similar to the external_adc app, but samples two 12 bit ADCs connected to a RP2350B, as well as two PCM1802 modules. Intended for use with vhs-decode, see [this PCB](https://github.com/Sev5000/RP2350B_DualADC_DualPCM) for the matching hardware.
+This example needs to be built with an RP2350B-board in order to work correctly:
+
+    cmake -DPICO_PLATFORM=rp2350 -DPICO_BOARD=solderparty_rp2350_stamp_xl ../
 
 ## Credits
 
