@@ -49,7 +49,7 @@ typedef struct
 } __attribute__((packed, aligned(1))) metadata_t;
 
 void hsdaoh_start(void);
-void hsdaoh_init(void);
+void hsdaoh_init(int dstrength, int slewrate);
 void hsdaoh_update_head(int stream_id, int head);
 int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, uint length, uint16_t *ringbuf);
 

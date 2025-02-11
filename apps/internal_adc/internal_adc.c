@@ -152,7 +152,7 @@ int main()
 
 	stdio_init_all();
 
-	hsdaoh_init();
+	hsdaoh_init(GPIO_DRIVE_STRENGTH_4MA, GPIO_SLEW_RATE_SLOW);
 	hsdaoh_add_stream(0, 1, (SYS_CLK/8) * 1000, RBUF_MAX_DATA_LEN, ringbuffer);
 	hsdaoh_start();
 	init_adc_input();

@@ -40,11 +40,8 @@
 #include "hardware/structs/hstx_ctrl.h"
 #include "hardware/structs/hstx_fifo.h"
 #include "pico/multicore.h"
-
-#include "data_packet.h"
-
 #include "pico/stdlib.h"
-
+#include "data_packet.h"
 #include "picohsdaoh.h"
 
 // Section 5.4.2
@@ -305,7 +302,7 @@ int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, 
 	return 0;
 }
 
-void hsdaoh_init(void)
+void hsdaoh_init(int dstrength, int slewrate)
 {
 	for (uint i = 0; i < MAX_STREAMS; i++)
 		streams[i].active = false;
@@ -372,8 +369,13 @@ void hsdaoh_init(void)
 		hstx_ctrl_hw->bit[bit + 1] = lane_data_sel_bits | HSTX_CTRL_BIT0_INV_BITS;
 	}
 
-	for (int i = 12; i <= 19; ++i)
+	for (int i = 12; i <= 19; ++i) {
+		gpio_set_input_enabled(i, false);
+		gpio_disable_pulls(i);
+		gpio_set_drive_strength(i, dstrength);
+		gpio_set_slew_rate(i, slewrate);
 		gpio_set_function(i, 0); // HSTX
+	}
 
 	/* All channels are set up identically, to transfer a whole scanline and
 	 * then chain to the net channel. Each time a channel finishes, we
