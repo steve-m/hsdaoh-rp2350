@@ -75,10 +75,12 @@ typedef struct
 	uint16_t *rbuf;
 	uint tail;
 	uint head;
+	uint rbuf_slices;
 	uint16_t format;
 	uint32_t srate;
 	uint16_t len;
 	uint64_t data_cnt;
+	bool overflow;
 } stream_t;
 
 stream_t streams[MAX_STREAMS];
@@ -157,7 +159,10 @@ void init_info_packet(void)
 
 void hsdaoh_update_head(int stream_id, int head)
 {
-	streams[stream_id].head = head;
+	if (streams[stream_id].tail == head)
+		streams[stream_id].overflow = true;
+	else
+		streams[stream_id].head = head;
 }
 
 #define DMACH_HSTX_START	13
@@ -234,11 +239,18 @@ void __scratch_x("") hstx_dma_irq_handler()
 			if (!stream->active)
 				continue;
 
-			int next_tail = (stream->tail + 1) % RBUF_SLICES;
+			int next_tail = (stream->tail + 1) % stream->rbuf_slices;
 			if (stream->head != next_tail) {
 				next_line = &stream->rbuf[stream->tail * RBUF_SLICE_LEN];
 				stream->tail = next_tail;
-				next_line[RBUF_SLICE_LEN - 1] = stream->len;
+				stream->data_cnt += stream->len;
+				if (stream->overflow) {
+					/* signal that there has been an overflow */
+					next_line[RBUF_SLICE_LEN - 1] = 0x0fff;
+					stream->overflow = false;
+				} else
+					next_line[RBUF_SLICE_LEN - 1] = stream->len;
+
 				next_line[RBUF_SLICE_LEN - 3] = i; // stream ID
 				break;
 			}
@@ -284,7 +296,7 @@ void hsdaoh_start(void)
 	dma_channel_start(DMACH_HSTX_START);
 }
 
-int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, uint length, uint16_t *ringbuf)
+int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, uint length, uint slices, uint16_t *ringbuf)
 {
 	if (stream_id >= MAX_STREAMS)
 		return -1;
@@ -294,7 +306,8 @@ int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, 
 	stream->format = format;
 	stream->srate = samplerate;
 	stream->len = length;
-	stream->tail = RBUF_SLICES-1;
+	stream->rbuf_slices = slices;
+	stream->tail = slices-1;
 	stream->head = 0;
 	stream->data_cnt = 0;
 	stream->active = true;
@@ -378,7 +391,7 @@ void hsdaoh_init(int dstrength, int slewrate)
 	}
 
 	/* All channels are set up identically, to transfer a whole scanline and
-	 * then chain to the net channel. Each time a channel finishes, we
+	 * then chain to the next channel. Each time a channel finishes, we
 	 * reconfigure the one that just finished, meanwhile another channel
 	 * is already making progress. */
 	for (int i = 0; i < DMACH_HSTX_COUNT; i++) {

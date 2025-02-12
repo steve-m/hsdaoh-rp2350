@@ -53,7 +53,7 @@
 #define DMACH_PIO_PONG 1
 
 static bool pio_dma_pong = false;
-uint16_t ringbuffer[RBUF_TOTAL_LEN];
+uint16_t ringbuffer[RBUF_DEFAULT_TOTAL_LEN];
 int ringbuf_head = 2;
 
 void __scratch_y("") pio_dma_irq_handler()
@@ -63,7 +63,7 @@ void __scratch_y("") pio_dma_irq_handler()
 	dma_hw->intr = 1u << ch_num;
 	pio_dma_pong = !pio_dma_pong;
 
-	ringbuf_head = (ringbuf_head + 1) % RBUF_SLICES;
+	ringbuf_head = (ringbuf_head + 1) % RBUF_DEFAULT_SLICES;
 
 	ch->write_addr = (uintptr_t)&ringbuffer[ringbuf_head * RBUF_SLICE_LEN];
 	ch->transfer_count = RBUF_MAX_DATA_LEN;
@@ -136,7 +136,7 @@ int main()
 	stdio_init_all();
 
 	hsdaoh_init(GPIO_DRIVE_STRENGTH_4MA, GPIO_SLEW_RATE_SLOW);
-	hsdaoh_add_stream(0, 1, (SYS_CLK/8) * 1000, RBUF_MAX_DATA_LEN, ringbuffer);
+	hsdaoh_add_stream(0, 1, (SYS_CLK/8) * 1000, RBUF_MAX_DATA_LEN, RBUF_DEFAULT_SLICES, ringbuffer);
 	hsdaoh_start();
 	init_pio_input();
 

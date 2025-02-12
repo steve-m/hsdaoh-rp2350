@@ -23,12 +23,12 @@
 
 // stream ID, CRC word and length/metadata word, so 3 reserved words
 #define NUM_RESERVED_WORDS	3
-#define RBUF_SLICES		16
+#define RBUF_DEFAULT_SLICES	16
 #define RBUF_SLICE_LEN		MODE_H_ACTIVE_PIXELS
 #define RBUF_MAX_DATA_LEN	(RBUF_SLICE_LEN - NUM_RESERVED_WORDS)
-#define RBUF_TOTAL_LEN		(RBUF_SLICE_LEN * RBUF_SLICES)
+#define RBUF_DEFAULT_TOTAL_LEN	(RBUF_SLICE_LEN * RBUF_DEFAULT_SLICES)
 
-#define MAX_STREAMS		8
+#define MAX_STREAMS		4
 
 enum crc_config {
 	CRC_NONE,		/* No CRC, just 16 bit idle counter */
@@ -51,6 +51,6 @@ typedef struct
 void hsdaoh_start(void);
 void hsdaoh_init(int dstrength, int slewrate);
 void hsdaoh_update_head(int stream_id, int head);
-int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, uint length, uint16_t *ringbuf);
+int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, uint length, uint slices, uint16_t *ringbuf);
 
 #endif

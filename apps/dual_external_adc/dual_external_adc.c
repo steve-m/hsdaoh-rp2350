@@ -67,7 +67,7 @@
 #define DMACH_PIO_PONG 1
 
 static bool pio_dma_pong = false;
-uint16_t ringbuffer[RBUF_TOTAL_LEN];
+uint16_t ringbuffer[RBUF_DEFAULT_TOTAL_LEN];
 int ringbuf_head = 2;
 
 void __scratch_y("") pio_dma_irq_handler()
@@ -77,7 +77,7 @@ void __scratch_y("") pio_dma_irq_handler()
 	dma_hw->intr = 1u << ch_num;
 	pio_dma_pong = !pio_dma_pong;
 
-	ringbuf_head = (ringbuf_head + 1) % RBUF_SLICES;
+	ringbuf_head = (ringbuf_head + 1) % RBUF_DEFAULT_SLICES;
 
 	ch->write_addr = (uintptr_t)&ringbuffer[ringbuf_head * RBUF_SLICE_LEN];
 	ch->transfer_count = ADC_DATA_LEN/2;
@@ -143,7 +143,7 @@ void init_pio_input(void)
 #define DMACH_AUDIO_PIO_PONG 3
 
 static bool audio_pio_dma_pong = false;
-uint16_t audio_ringbuffer[RBUF_TOTAL_LEN];
+uint16_t audio_ringbuffer[RBUF_DEFAULT_TOTAL_LEN];
 int audio_ringbuf_head = 2;
 
 void __scratch_y("") audio_pio_dma_irq_handler()
@@ -153,7 +153,7 @@ void __scratch_y("") audio_pio_dma_irq_handler()
 	dma_hw->intr = 1u << ch_num;
 	audio_pio_dma_pong = !audio_pio_dma_pong;
 
-	audio_ringbuf_head = (audio_ringbuf_head + 1) % RBUF_SLICES;
+	audio_ringbuf_head = (audio_ringbuf_head + 1) % RBUF_DEFAULT_SLICES;
 
 	ch->write_addr = (uintptr_t)&audio_ringbuffer[audio_ringbuf_head * RBUF_SLICE_LEN];
 	ch->transfer_count = AUDIO_DATA_LEN/2;
@@ -231,7 +231,6 @@ int main()
 	);
 
 	pll_init(pll_usb, 1, 1536 * MHZ, 4, 2);
-//	pll_init(pll_usb, 1, (983 * MHZ) + (40 * KHZ), 4, 2);
 
 	/* set USB clock to clk_usb/4 */
 	hw_write_masked(&clocks_hw->clk[clk_usb].div, 4 << CLOCKS_CLK_USB_DIV_INT_LSB, CLOCKS_CLK_USB_DIV_INT_BITS);
@@ -242,8 +241,8 @@ int main()
 	stdio_init_all();
 
 	hsdaoh_init(GPIO_DRIVE_STRENGTH_4MA, GPIO_SLEW_RATE_SLOW);
-	hsdaoh_add_stream(0, 1, (SYS_CLK/8) * 1000, ADC_DATA_LEN, ringbuffer);
-	hsdaoh_add_stream(1, 1, 75000, AUDIO_DATA_LEN, audio_ringbuffer);
+	hsdaoh_add_stream(0, 1, (SYS_CLK/8) * 1000, ADC_DATA_LEN, RBUF_DEFAULT_SLICES, ringbuffer);
+	hsdaoh_add_stream(1, 1, 75000, AUDIO_DATA_LEN, RBUF_DEFAULT_SLICES, audio_ringbuffer);
 	hsdaoh_start();
 	init_pio_input();
 	init_audio_pio_input();
