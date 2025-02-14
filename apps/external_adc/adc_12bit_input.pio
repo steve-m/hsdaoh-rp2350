@@ -1,5 +1,5 @@
 ;
-; Copyright (c) 2024 Steve Markgraf <steve@steve-m.de>
+; Copyright (c) 2024-2025 Steve Markgraf <steve@steve-m.de>
 ;
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
@@ -8,55 +8,28 @@
 ; ADC clock output as side-set
 ;
 ; Data being pushed to the FIFO, four 12 bit samples A-D
-; First word:  A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00 B03 B02 B01 B00
-; Second word: B11 B10 B09 B08 B07 B06 B05 B04 C07 C06 C05 C04 C03 C02 C01 C00
-; Third word:  D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00 C11 C10 C09 C08
+; First word:  A03 A02 A01 A00 B11 B10 B09 B08 B07 B06 B05 B04 B03 B02 B01 B00
+; Second word: A07 A06 A05 A04 C11 C10 C09 C08 C07 C06 C05 C04 C03 C02 C01 C00
+; Third word:  A11 A10 A09 A08 D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00
 
-.pio_version 0
+.pio_version 1
 .program adc_12bit_input
 .side_set 1
 
 public entry_point:
 
 .wrap_target
-	;----------------------------------------------------------------------------------------
-	in pins, 12     side 1		; 12 bits of first sample in ISR					SAMP
-	nop             side 1
-	nop[1]          side 0
-	; ISR is now:   0 0 0 0 A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00
-	;----------------------------------------------------------------------------------------
-	mov osr, pins   side 1		; 12 bits of second sample in OSR					SAMP
-	; OSR is now:   0 0 0 0 B11 B10 B09 B08 B07 B06 B05 B04 B03 B02 B01 B00
+	mov osr, pins	side 1	; sample A
+	out isr, 4	side 0
 
-	in osr, 4       side 1		; 12 of first, 4 of second sample in ISR				AUTOPUSH
-	; ISR is now:   A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00 B03 B02 B01 B00
+	in pins, 12	side 1	; sample B, autopush
+	out isr, 4	side 0
 
-	out null, 4     side 0
-	; OSR is now:   0 0 0 0 0 0 0 0 B11 B10 B09 B08 B07 B06 B05 B04
+	in pins, 12	side 1	; sample C, autopush
+	out isr, 4	side 0
 
-	nop             side 0
-	;----------------------------------------------------------------------------------------
-	mov x, pins     side 1		; 12 bits of third sample in X, 8 of second remaining in OSR		SAMP
-	in osr, 8       side 1		; 8 of second sample now in ISR, OSR is now empty an can be re-used
-	; ISR is now:   0 0 0 0 0 0 0 0 B11 B10 B09 B08 B07 B06 B05 B04
-
-	mov osr, x      side 0
-	; OSR is now   0 0 0 0 C11 C10 C09 C08 C07 C06 C05 C04 C03 C02 C01 C00
-
-	in osr, 8       side 0		; autopush happening							AUTOPUSH
-	; ISR is now:   B11 B10 B09 B08 B07 B06 B05 B04 C07 C06 C05 C04 C03 C02 C01 C00
-	;----------------------------------------------------------------------------------------
-	in pins, 12     side 1		; sample fourth sample to ISR						SAMP
-	; ISR is now   0 0 0 0 D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00
-
-	out null, 8     side 1
-	; OSR is now   0 0 0 0 0 0 0 0 0 0 0 0 C11 C10 C09 C08
-
-
-	in osr, 4       side 0		; send out remaining part of third sample and fourth sample		AUTOPUSH
-	; ISR is now   D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00 C11 C10 C09 C08
-	nop             side 0
-	;----------------------------------------------------------------------------------------
+	in pins, 12	side 1	; sample D, autopush
+	nop		side 0
 .wrap
 
 % c-sdk {
@@ -100,7 +73,7 @@ static inline void adc_12bit_input_program_init(PIO pio, uint sm, uint offset, u
 	// We only receive, so disable the TX FIFO to make the RX FIFO deeper.
 	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
 
-	sm_config_set_clkdiv(&c, 1.f);
+	sm_config_set_clkdiv(&c, 2.f);
 
 	// Load our configuration, and start the program from the beginning
 	pio_sm_init(pio, sm, offset, &c);
