@@ -48,6 +48,8 @@ typedef struct
 	uint8_t  stream_cnt;
 } __attribute__((packed, aligned(1))) metadata_t;
 
+#define FLAG_STREAM_ID_PRESENT	(1 << 0)
+
 void hsdaoh_start(void);
 void hsdaoh_init(int dstrength, int slewrate);
 void hsdaoh_update_head(int stream_id, int head);
