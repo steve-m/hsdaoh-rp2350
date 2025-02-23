@@ -203,9 +203,6 @@ void __scratch_x("") hstx_dma_irq_handler()
 	dma_channel_hw_t *ch = &dma_hw->ch[ch_num];
 	dma_hw->intr = 1u << ch_num;
 
-	/* for raw commands we need to use 32 bit DMA transfers */
-	ch->al1_ctrl = (ch->al1_ctrl & ~DMA_CH0_CTRL_TRIG_DATA_SIZE_BITS) | (DMA_SIZE_32 << DMA_CH0_CTRL_TRIG_DATA_SIZE_LSB);
-
 	if (v_scanline >= MODE_V_FRONT_PORCH && v_scanline < (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH)) {
 		/* on first line of actual VSYNC, output data packet */
 		if (v_scanline == MODE_V_FRONT_PORCH) {
@@ -268,12 +265,8 @@ void __scratch_x("") hstx_dma_irq_handler()
 		/* on the second last word of the line, insert the CRC16 of the entire line before the last line */
 		next_line[RBUF_SLICE_LEN - 2] = saved_crc;
 		dma_sniff_pipelined_ch = ch_num;
-
-		/* switch to 16 bit DMA transfer size for the actual data,
-		 * because for YCbCr422 TMDS channel 0 is unused */
-		ch->al1_ctrl = (ch->al1_ctrl & ~DMA_CH0_CTRL_TRIG_DATA_SIZE_BITS) | (DMA_SIZE_16 << DMA_CH0_CTRL_TRIG_DATA_SIZE_LSB);
 		ch->read_addr = (uintptr_t)next_line;
-		ch->transfer_count = MODE_H_ACTIVE_PIXELS;
+		ch->transfer_count = MODE_H_ACTIVE_PIXELS/2;
 		vactive_cmdlist_posted = false;
 	}
 
@@ -324,26 +317,25 @@ void hsdaoh_init(int dstrength, int slewrate)
 
 	/* Configure HSTX's TMDS encoder for YCbCr422 stream: L0 is unused in this
 	 * mode on the MS2130 and carries the same data as L1. This way we can
-	 * conveniently use 16-bit DMA transfers to transparently transfer data to
+	 * conveniently use 32-bit DMA transfers to transparently transfer data to
 	 * libhsdaoh on the host */
 	hstx_ctrl_hw->expand_tmds =
-			7  << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB |
+			7 << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB |
 			8 << HSTX_CTRL_EXPAND_TMDS_L2_ROT_LSB   |
-			7  << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB |
-			0  << HSTX_CTRL_EXPAND_TMDS_L1_ROT_LSB   |
-			7  << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB |
-			0  << HSTX_CTRL_EXPAND_TMDS_L0_ROT_LSB;
+			7 << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB |
+			0 << HSTX_CTRL_EXPAND_TMDS_L1_ROT_LSB   |
+			7 << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB |
+			0 << HSTX_CTRL_EXPAND_TMDS_L0_ROT_LSB;
 
-
-	/* Both to-be TMDS encoded pixels and raw control words arrive as one word
-	 * per symbol. While the raw control words arrive as 32-bit to carry the 3x 10
-	 * bit data for the three lanes, the actual data arrives as a 16-bit word
-	 * that gets duplicated before entering the HSTX */
+	/* Both to-be TMDS encoded pixels and raw control words arrive as 32-bit
+	 * words. While for the raw control words this means they carry the 3x 10
+	 * bit data for the three lanes (1 word per symbol), the actual data
+	 * contains two times 16-bit data per 32-bit word */
 	hstx_ctrl_hw->expand_shift =
-		1 << HSTX_CTRL_EXPAND_SHIFT_ENC_N_SHIFTS_LSB |
-		0 << HSTX_CTRL_EXPAND_SHIFT_ENC_SHIFT_LSB |
-		1 << HSTX_CTRL_EXPAND_SHIFT_RAW_N_SHIFTS_LSB |
-		0 << HSTX_CTRL_EXPAND_SHIFT_RAW_SHIFT_LSB;
+		2  << HSTX_CTRL_EXPAND_SHIFT_ENC_N_SHIFTS_LSB |
+		16 << HSTX_CTRL_EXPAND_SHIFT_ENC_SHIFT_LSB |
+		1  << HSTX_CTRL_EXPAND_SHIFT_RAW_N_SHIFTS_LSB |
+		0  << HSTX_CTRL_EXPAND_SHIFT_RAW_SHIFT_LSB;
 
 	/* Serial output config: clock period of 5 cycles, pop from command
 	 * expander every 5 cycles, shift the output shiftreg by 2 every cycle. */
@@ -401,6 +393,7 @@ void hsdaoh_init(int dstrength, int slewrate)
 		channel_config_set_chain_to(&c, chain_to_ch);
 		channel_config_set_dreq(&c, DREQ_HSTX);
 		channel_config_set_sniff_enable(&c, true);
+		channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
 		dma_channel_configure(
 			DMACH_HSTX_START + i,
 			&c,
