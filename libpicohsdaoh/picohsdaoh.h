@@ -49,6 +49,7 @@ typedef struct
 } __attribute__((packed, aligned(1))) metadata_t;
 
 #define FLAG_STREAM_ID_PRESENT	(1 << 0)
+#define FLAG_FORMAT_ID_PRESENT	(1 << 1)
 
 void hsdaoh_start(void);
 void hsdaoh_init(int dstrength, int slewrate);

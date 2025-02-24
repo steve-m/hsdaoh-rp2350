@@ -176,7 +176,8 @@ static bool vactive_cmdlist_posted = false;
 static uint8_t dma_sniff_pipelined_ch = 0;
 static bool dma_sniff_pipelined_disable = false;
 
-metadata_t metadata = (metadata_t) { .magic = 0xda7acab1, .crc_config = CRC16_2_LINE, .version = 1, .flags = FLAG_STREAM_ID_PRESENT };
+metadata_t metadata = (metadata_t) { .magic = 0xda7acab1, .crc_config = CRC16_2_LINE, .version = 1,
+				     .flags = FLAG_STREAM_ID_PRESENT | FLAG_FORMAT_ID_PRESENT };
 
 /* HSTX DMA IRQ handler, reconfigures the channel that just completed while
  * ther other channel is currently busy */
