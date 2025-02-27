@@ -249,7 +249,7 @@ void __scratch_x("") hstx_dma_irq_handler()
 				} else
 					next_line[RBUF_SLICE_LEN - 1] = stream->len;
 
-				next_line[RBUF_SLICE_LEN - 3] = i; // stream ID
+				next_line[RBUF_SLICE_LEN - 3] = (stream->format << 6) | (i & 0x3f); // stream and format ID
 				break;
 			}
 		}

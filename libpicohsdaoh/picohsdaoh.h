@@ -51,6 +51,51 @@ typedef struct
 #define FLAG_STREAM_ID_PRESENT	(1 << 0)
 #define FLAG_FORMAT_ID_PRESENT	(1 << 1)
 
+enum
+{
+	RAW_8BIT,
+	RAW_16BIT,
+	RAW_24BIT,
+	RAW_32BIT,
+	RAW_64BIT,
+	PIO_1BIT,
+	PIO_2BIT,
+	PIO_3BIT,
+	PIO_4BIT,
+	PIO_5BIT,
+	PIO_6BIT,
+	PIO_7BIT,
+	PIO_8BIT,
+	PIO_8BIT_DUAL,
+	PIO_8BIT_IQ,
+	PIO_9BIT,
+	PIO_10BIT,
+	PIO_10BIT_DUAL,
+	PIO_10BIT_IQ,
+	PIO_11BIT,
+	PIO_12BIT,
+	PIO_12BIT_DUAL,
+	PIO_12BIT_IQ,
+	PIO_13BIT,
+	PIO_14BIT,
+	PIO_14BIT_DUAL,
+	PIO_14BIT_IQ,
+	PIO_15BIT,
+	PIO_16BIT,
+	PIO_16BIT_DUAL,
+	PIO_16BIT_IQ,
+	PIO_17BIT,
+	PIO_18BIT,
+	PIO_19BIT,
+	PIO_20BIT,
+	PIO_24BIT,
+	PIO_24BIT_IQ,
+	PIO_28BIT,
+	PIO_32BIT,
+	PIO_32BIT_IQ,
+	PIO_PCM1802_AUDIO,
+};
+
 void hsdaoh_start(void);
 void hsdaoh_init(int dstrength, int slewrate);
 void hsdaoh_update_head(int stream_id, int head);
