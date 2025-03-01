@@ -57,7 +57,8 @@
 #define ADC_DATA_LEN	(RBUF_SLICE_LEN - 6)
 
 // Same here for 2x32 bit words
-#define AUDIO_DATA_LEN	(RBUF_SLICE_LEN - 4)
+#define AUDIO_DATA_LEN		(RBUF_SLICE_LEN - 4)
+#define AUDIO_RBUF_SLICES	8
 
 // ADC is attached to GP0 - GP11 with clock on GP20
 #define PIO_INPUT_PIN_BASE 23
@@ -143,11 +144,11 @@ void init_pio_input(void)
 #define DMACH_AUDIO1_PIO_PONG 3
 
 static bool audio1_pio_dma_pong = false;
-uint16_t audio1_ringbuffer[RBUF_DEFAULT_TOTAL_LEN];
+uint16_t audio1_ringbuffer[AUDIO_RBUF_SLICES * RBUF_SLICE_LEN];
 int audio1_ringbuf_head = 2;
 
 static bool audio2_pio_dma_pong = false;
-uint16_t audio2_ringbuffer[RBUF_DEFAULT_TOTAL_LEN];
+uint16_t audio2_ringbuffer[AUDIO_RBUF_SLICES * RBUF_SLICE_LEN];
 int audio2_ringbuf_head = 2;
 
 void __scratch_y("") audio1_pio_dma_irq_handler()
@@ -157,7 +158,7 @@ void __scratch_y("") audio1_pio_dma_irq_handler()
 	dma_hw->intr = 1u << ch_num;
 	audio1_pio_dma_pong = !audio1_pio_dma_pong;
 
-	audio1_ringbuf_head = (audio1_ringbuf_head + 1) % RBUF_DEFAULT_SLICES;
+	audio1_ringbuf_head = (audio1_ringbuf_head + 1) % AUDIO_RBUF_SLICES;
 
 	ch->write_addr = (uintptr_t)&audio1_ringbuffer[audio1_ringbuf_head * RBUF_SLICE_LEN];
 	ch->transfer_count = AUDIO_DATA_LEN/2;
@@ -227,7 +228,7 @@ void __scratch_y("") audio2_pio_dma_irq_handler()
 	dma_hw->intr = 1u << ch_num;
 	audio2_pio_dma_pong = !audio2_pio_dma_pong;
 
-	audio2_ringbuf_head = (audio2_ringbuf_head + 1) % RBUF_DEFAULT_SLICES;
+	audio2_ringbuf_head = (audio2_ringbuf_head + 1) % AUDIO_RBUF_SLICES;
 
 	ch->write_addr = (uintptr_t)&audio2_ringbuffer[audio2_ringbuf_head * RBUF_SLICE_LEN];
 	ch->transfer_count = AUDIO_DATA_LEN/2;
@@ -313,11 +314,10 @@ int main()
 	clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB, 10);
 
 	stdio_init_all();
-
 	hsdaoh_init(GPIO_DRIVE_STRENGTH_4MA, GPIO_SLEW_RATE_SLOW);
 	hsdaoh_add_stream(0, PIO_12BIT_DUAL, (SYS_CLK/8) * 1000, ADC_DATA_LEN, RBUF_DEFAULT_SLICES, ringbuffer);
-	hsdaoh_add_stream(AUDIO1_STREAM_ID, PIO_PCM1802_AUDIO, 75000, AUDIO_DATA_LEN, RBUF_DEFAULT_SLICES, audio1_ringbuffer);
-	hsdaoh_add_stream(AUDIO2_STREAM_ID, PIO_PCM1802_AUDIO, 75000, AUDIO_DATA_LEN, RBUF_DEFAULT_SLICES, audio2_ringbuffer);
+	hsdaoh_add_stream(AUDIO1_STREAM_ID, PIO_PCM1802_AUDIO, 75000, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio1_ringbuffer);
+	hsdaoh_add_stream(AUDIO2_STREAM_ID, PIO_PCM1802_AUDIO, 75000, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio2_ringbuffer);
 	hsdaoh_start();
 	init_pio_input();
 	init_audio1_pio_input();
