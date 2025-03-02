@@ -1,7 +1,7 @@
 # hsdaoh-rp2350 - High Speed Data Acquisition over HDMI
-## Stream up to 128 MByte/s from your Raspberry Pi Pico2 to your PC
+## Stream up to 175 MByte/s from your Raspberry Pi Pico2 to your PC
 
-Using $5 USB3 HDMI capture sticks based on the MacroSilicon MS2130, this project allows to stream out up to 128 MByte/s of real time data from an RP2350 (with overclocking) to a host computer with USB3.
+Using $5 USB3 HDMI capture sticks based on the MacroSilicon MS2130, this project allows to stream out up to 175 MByte/s of real time data from an RP2350 (with overclocking) to a host computer with USB3.
 For more information and the host library, see the [main repository](https://github.com/steve-m/hsdaoh) and the [talk at OsmoDevcon '24](https://media.ccc.de/v/osmodevcon2024-200-low-cost-high-speed-data-acquisition-over-hdmi).
 
 ![Raspberry Pi Pico2 with MS2130 stick](https://steve-m.de/projects/hsdaoh/pico2_hsdaoh.jpg)
@@ -57,6 +57,10 @@ Similar to the external_adc app, but samples two 12 bit ADCs connected to a RP23
 This example needs to be built with an RP2350B-board in order to work correctly:
 
     cmake -DPICO_PLATFORM=rp2350 -DPICO_BOARD=solderparty_rp2350_stamp_xl ../
+
+### sdr
+
+This app can be used for attaching the [hsdaohSDR prototype](https://github.com/steve-m/hsdaohSDR) to an RP2350B instead of the Tang nano 20K FPGA board. Contains PIO code for packing the 2x 10 bit AD9218 data, and also implements a USB UART to I2C bridge for controlling the tuner. Like the dual_external_adc, it also needs to be built with a RP2350B board.
 
 ## Credits
 

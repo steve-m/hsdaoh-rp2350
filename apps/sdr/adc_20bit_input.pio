@@ -1,0 +1,106 @@
+;
+; Copyright (c) 2025 Steve Markgraf <steve@steve-m.de>
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+; Sample 2x10 bit parallel ADC (AD9218) every 4 PIO cycles on rising clock edge,
+; pack four 20 bit samples in five 16 bit words
+; ADC clock output as side-set
+;
+; Data being pushed to the FIFO, four 20 bit samples A-D
+; First word:  A15 A14 A13 A12 A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00
+; Second word: A19 A18 A17 A16 B11 B10 B09 B08 B07 B06 B05 B04 B03 B02 B01 B00
+; Third word:  B19 B18 B17 B16 B15 B14 B13 B12 C07 C06 C05 C04 C03 C02 C01 C00
+; Fourth word: C19 C18 C17 C16 C15 C14 C13 C12 C11 C10 C09 C08 D03 D02 D01 D00
+; Fifth word:  D19 D18 D17 D16 D15 D14 D13 D12 D11 D10 D09 D08 D07 D06 D05 D04
+
+.pio_version 1
+.program adc_20bit_input
+.side_set 1
+
+public entry_point:
+
+.wrap_target
+	;----------------------------------------------------------------------------------------
+	mov osr, pins	side 0			; SAMP A
+
+	; OSR is now A19 A18 A17 A16 A15 A14 A13 A12 A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00
+
+	in osr, 16	side 1			; AUTOPUSH: A15 A14 A13 A12 A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00
+	out null, 16	side 1
+	in osr, 4	side 0			; ISR is now A19 A18 A17 A16
+	;----------------------------------------------------------------------------------------
+	mov osr, pins	side 0			; SAMP B
+
+	in osr, 12	side 1			; AUTOPUSH: A19 A18 A17 A16 B11 B10 B09 B08 B07 B06 B05 B04 B03 B02 B01 B00
+	out null, 12	side 1
+	in osr, 8	side 0			; ISR is now B19 B18 B17 B16 B15 B14 B13 B12
+	;----------------------------------------------------------------------------------------
+	mov osr, pins	side 0			; SAMP C
+
+	in osr, 8	side 1			; AUTOPUSH: B19 B18 B17 B16 B15 B14 B13 B12 C07 C06 C05 C04 C03 C02 C01 C00
+	out null, 8	side 1
+	in osr, 12	side 0			; ISR is now C19 C18 C17 C16 C15 C14 C13 C12 C11 C10 C09 C08
+	;----------------------------------------------------------------------------------------
+	mov osr, pins	side 0			; SAMP D
+
+	in osr, 4	side 1			; AUTOPUSH: C19 C18 C17 C16 C15 C14 C13 C12 C11 C10 C09 C08 D03 D02 D01 D00
+	out null, 4	side 1
+	in osr, 16	side 0			; AUTOPUSH: D19 D18 D17 D16 D15 D14 D13 D12 D11 D10 D09 D08 D07 D06 D05 D04
+	;----------------------------------------------------------------------------------------
+.wrap
+
+% c-sdk {
+static inline void adc_20bit_input_program_init(PIO pio, uint sm, uint offset, uint pin, uint clk_pin)
+{
+	pio_sm_config c = adc_20bit_input_program_get_default_config(offset);
+
+	// Set the IN base pin to the provided `pin` parameter.
+	sm_config_set_in_pins(&c, pin);
+
+	// configure CLK pin for side-set
+	sm_config_set_sideset_pins(&c, clk_pin);
+	sm_config_set_sideset(&c, 1, false, false);
+
+	pio_sm_set_consecutive_pindirs(pio, sm, clk_pin, 1, true);
+	pio_gpio_init(pio, clk_pin);
+
+	gpio_disable_pulls(clk_pin);
+//	gpio_set_drive_strength(clk_pin, GPIO_DRIVE_STRENGTH_12MA);
+//	gpio_set_slew_rate(clk_pin, GPIO_SLEW_RATE_FAST);
+
+	// Set the pin directions to input at the PIO
+	// Set D0-D19 of the ADC(s) as input
+	pio_sm_set_consecutive_pindirs(pio, sm, pin, 20, false);
+
+	// Connect these GPIOs to this PIO block
+	for (int i = pin; i < (pin+20); i++) {
+		//gpio_pull_down(i);
+		pio_gpio_init(pio, i);
+	}
+
+	sm_config_set_in_shift(
+		&c,
+		false,	// Shift-to-right = false (i.e. shift to left)
+		true,	// Autopush enabled
+		16	// Autopush threshold = 16
+	);
+
+	// required in order to set shift-to-right to true (for the out, null ops)
+	sm_config_set_out_shift(
+		&c,
+		true,	// Shift-to-right = true
+		false,	// Autopush disabled
+		1	// Autopush threshold: ignored
+	);
+
+	// We only receive, so disable the TX FIFO to make the RX FIFO deeper.
+	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+
+	sm_config_set_clkdiv(&c, 1.00f);
+
+	// Load our configuration, and start the program from the beginning
+	pio_sm_init(pio, sm, offset, &c);
+	pio_sm_set_enabled(pio, sm, true);
+}
+%}
