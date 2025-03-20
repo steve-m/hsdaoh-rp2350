@@ -157,7 +157,7 @@ void init_info_packet(void)
 	info_len = len;
 }
 
-void hsdaoh_update_head(int stream_id, int head)
+void __scratch_y("") hsdaoh_update_head(int stream_id, int head)
 {
 	if (streams[stream_id].tail == head)
 		streams[stream_id].overflow = true;
