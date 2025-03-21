@@ -97,8 +97,8 @@ enum
 };
 
 void hsdaoh_start(void);
-void hsdaoh_init(int dstrength, int slewrate);
 void hsdaoh_update_head(int stream_id, int head);
 int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, uint length, uint slices, uint16_t *ringbuf);
-
+void hsdaoh_set_sys_clock_khz(uint32_t freq_khz);
+void hsdaoh_init(int dstrength, int slewrate);
 #endif

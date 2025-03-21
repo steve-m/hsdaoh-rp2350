@@ -146,7 +146,7 @@ int main()
 	//vreg_set_voltage(VREG_VOLTAGE_1_80);
 	sleep_ms(1);
 #endif
-	set_sys_clock_khz(SYS_CLK, true);
+	hsdaoh_set_sys_clock_khz(SYS_CLK);
 	int usbdiv;
 
 	/* set USB clock to clk_sys/n */

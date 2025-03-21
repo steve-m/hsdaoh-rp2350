@@ -118,7 +118,7 @@ int main()
 {
 	vreg_set_voltage(VREG_VOLTAGE_MAX);
 	sleep_ms(1);
-	set_sys_clock_khz(SYS_CLK, true);
+	hsdaoh_set_sys_clock_khz(SYS_CLK);
 
 	/* set HSTX clock to sysclk/1 */
 	hw_write_masked(

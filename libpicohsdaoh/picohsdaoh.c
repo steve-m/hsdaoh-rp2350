@@ -36,9 +36,11 @@
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
+#include "hardware/clocks.h"
 #include "hardware/structs/bus_ctrl.h"
 #include "hardware/structs/hstx_ctrl.h"
 #include "hardware/structs/hstx_fifo.h"
+#include "hardware/structs/qmi.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
 #include "data_packet.h"
@@ -307,6 +309,28 @@ int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, 
 	stream->active = true;
 
 	return 0;
+}
+
+/* set system clock, without overclocking the QSPI flash */
+void hsdaoh_set_sys_clock_khz(uint32_t freq_khz)
+{
+	uint clkdiv = freq_khz/40000;
+	if (freq_khz % 40000)
+		clkdiv++;
+
+	if (clkdiv < 4)
+		clkdiv = 4;
+	else if (clkdiv > 8)
+		clkdiv = 8;
+
+	/* set QSPI clock divider */
+	hw_write_masked(&qmi_hw->m[0].timing,
+		clkdiv << QMI_M0_TIMING_CLKDIV_LSB,
+		QMI_M0_TIMING_CLKDIV_BITS
+	);
+
+	__asm__ __volatile__("dmb sy");
+	set_sys_clock_khz(freq_khz, true);
 }
 
 void hsdaoh_init(int dstrength, int slewrate)
