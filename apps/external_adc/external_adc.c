@@ -153,12 +153,12 @@ void __scratch_y("") audio_pio_dma_irq_handler()
 	ch->write_addr = (uintptr_t)&audio_ringbuffer[audio_ringbuf_head * RBUF_SLICE_LEN];
 	ch->transfer_count = AUDIO_DATA_LEN/2;
 
-	hsdaoh_update_head(1, audio_ringbuf_head);
+	hsdaoh_update_head(2, audio_ringbuf_head);
 }
 
 void init_audio_pio_input(void)
 {
-	PIO pio = pio1;
+	PIO pio = pio0;
 	uint offset = pio_add_program(pio, &pcm1802_fmt00_program);
 	uint sm_data = pio_claim_unused_sm(pio, true);
 	pcm1802_fmt00_program_init(pio, sm_data, offset, PCM1802_DATA_PIN);
@@ -220,6 +220,7 @@ int main()
 		CLOCKS_CLK_HSTX_DIV_INT_BITS
 	);
 
+#ifdef GPOUT_AUDIO_CLOCK
 	pll_init(pll_usb, 1, 1536 * MHZ, 4, 2);
 
 	/* set USB clock to clk_usb/4 */
@@ -227,15 +228,19 @@ int main()
 
 	/* set GPOUT0 clock to USB PLL/10 -> 19.2 MHz, resulting in 75 kHz ADC sample rate (19.2M/256) */
 	clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB, 10);
+#endif
 
 	stdio_init_all();
 
 	hsdaoh_init(GPIO_DRIVE_STRENGTH_4MA, GPIO_SLEW_RATE_SLOW);
 	hsdaoh_add_stream(0, PIO_12BIT, (SYS_CLK/4) * 1000, ADC_DATA_LEN, RBUF_DEFAULT_SLICES, ringbuffer);
-	hsdaoh_add_stream(2, PIO_PCM1802_AUDIO, 75000, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio_ringbuffer);
+	hsdaoh_add_stream(2, PIO_PCM1802_AUDIO, 78125, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio_ringbuffer);
 	hsdaoh_start();
 	init_pio_input();
 	init_audio_pio_input();
+
+	/* synchronously start data input */
+	pio_set_sm_mask_enabled(pio0, 3, true);
 
 	while (1)
 		__wfi();

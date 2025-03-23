@@ -19,16 +19,16 @@
 public entry_point:
 
 .wrap_target
-	mov osr, pins	side 5	; sample A
+	mov osr, pins	side 7	; sample A
 	out isr, 8	side 0
 
-	in pins, 24	side 5	; sample B, autopush
+	in pins, 24	side 7	; sample B, autopush
 	out isr, 8	side 0
 
-	in pins, 24	side 5	; sample C, autopush
+	in pins, 24	side 7	; sample C, autopush
 	out isr, 8	side 0
 
-	in pins, 24	side 5	; sample D, autopush
+	in pins, 24	side 7	; sample D, autopush
 	nop		side 0
 .wrap
 
@@ -46,6 +46,7 @@ static inline void adc_24bit_input_program_init(PIO pio, uint sm, uint offset, u
 
 	pio_sm_set_consecutive_pindirs(pio, sm, clk_pin, 3, true);
 	pio_gpio_init(pio, clk_pin);
+	pio_gpio_init(pio, clk_pin+1);
 	pio_gpio_init(pio, clk_pin+2);
 
 	// Set the pin directions to input at the PIO
@@ -78,6 +79,6 @@ static inline void adc_24bit_input_program_init(PIO pio, uint sm, uint offset, u
 
 	// Load our configuration, and start the program from the beginning
 	pio_sm_init(pio, sm, offset, &c);
-	pio_sm_set_enabled(pio, sm, true);
+//	pio_sm_set_enabled(pio, sm, true);
 }
 %}

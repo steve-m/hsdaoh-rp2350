@@ -14,21 +14,21 @@
 
 .pio_version 1
 .program adc_12bit_input
-.side_set 1
+.side_set 2
 
 public entry_point:
 
 .wrap_target
-	mov osr, pins	side 1	; sample A
+	mov osr, pins	side 3	; sample A
 	out isr, 4	side 0
 
-	in pins, 12	side 1	; sample B, autopush
+	in pins, 12	side 3	; sample B, autopush
 	out isr, 4	side 0
 
-	in pins, 12	side 1	; sample C, autopush
+	in pins, 12	side 3	; sample C, autopush
 	out isr, 4	side 0
 
-	in pins, 12	side 1	; sample D, autopush
+	in pins, 12	side 3	; sample D, autopush
 	nop		side 0
 .wrap
 
@@ -42,10 +42,11 @@ static inline void adc_12bit_input_program_init(PIO pio, uint sm, uint offset, u
 
 	// configure CLK pin for side-set
 	sm_config_set_sideset_pins(&c, clk_pin);
-	sm_config_set_sideset(&c, 1, false, false);
+	sm_config_set_sideset(&c, 2, false, false);
 
-	pio_sm_set_consecutive_pindirs(pio, sm, clk_pin, 1, true);
+	pio_sm_set_consecutive_pindirs(pio, sm, clk_pin, 2, true);
 	pio_gpio_init(pio, clk_pin);
+	pio_gpio_init(pio, clk_pin+1);
 
 	// Set the pin directions to input at the PIO
 	// Set D0-D11 of the ADC as input
@@ -77,6 +78,6 @@ static inline void adc_12bit_input_program_init(PIO pio, uint sm, uint offset, u
 
 	// Load our configuration, and start the program from the beginning
 	pio_sm_init(pio, sm, offset, &c);
-	pio_sm_set_enabled(pio, sm, true);
+//	pio_sm_set_enabled(pio, sm, true);
 }
 %}

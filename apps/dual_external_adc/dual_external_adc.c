@@ -140,8 +140,13 @@ void init_pio_input(void)
 
 #define PCM1802_DATA_PIN_1	0
 #define AUDIO1_STREAM_ID	2
-#define DMACH_AUDIO1_PIO_PING 2
-#define DMACH_AUDIO1_PIO_PONG 3
+#define DMACH_AUDIO1_PIO_PING	2
+#define DMACH_AUDIO1_PIO_PONG	3
+
+#define PCM1802_DATA_PIN_2	3
+#define AUDIO2_STREAM_ID	3
+#define DMACH_AUDIO2_PIO_PING	4
+#define DMACH_AUDIO2_PIO_PONG	5
 
 static bool audio1_pio_dma_pong = false;
 uint16_t audio1_ringbuffer[AUDIO_RBUF_SLICES * RBUF_SLICE_LEN];
@@ -166,61 +171,6 @@ void __scratch_y("") audio1_pio_dma_irq_handler()
 	hsdaoh_update_head(AUDIO1_STREAM_ID, audio1_ringbuf_head);
 }
 
-void init_audio1_pio_input(void)
-{
-	PIO pio = pio1;
-
-	pio_set_gpio_base(pio, 0);
-
-	uint offset = pio_add_program(pio, &pcm1802_fmt00_program);
-	uint sm_data = pio_claim_unused_sm(pio, true);
-	pcm1802_fmt00_program_init(pio, sm_data, offset, PCM1802_DATA_PIN_1);
-
-	dma_channel_config c;
-	c = dma_channel_get_default_config(DMACH_AUDIO1_PIO_PING);
-	channel_config_set_chain_to(&c, DMACH_AUDIO1_PIO_PONG);
-	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_data, false));
-	channel_config_set_read_increment(&c, false);
-	channel_config_set_write_increment(&c, true);
-	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
-
-	dma_channel_configure(
-		DMACH_AUDIO1_PIO_PING,
-		&c,
-		&audio1_ringbuffer[0 * RBUF_SLICE_LEN],
-		&pio->rxf[sm_data],
-		AUDIO_DATA_LEN/2,
-		false
-	);
-	c = dma_channel_get_default_config(DMACH_AUDIO1_PIO_PONG);
-	channel_config_set_chain_to(&c, DMACH_AUDIO1_PIO_PING);
-	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_data, false));
-	channel_config_set_read_increment(&c, false);
-	channel_config_set_write_increment(&c, true);
-	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
-
-	dma_channel_configure(
-		DMACH_AUDIO1_PIO_PONG,
-		&c,
-		&audio1_ringbuffer[1 * RBUF_SLICE_LEN],
-		&pio->rxf[sm_data],
-		AUDIO_DATA_LEN/2,
-		false
-	);
-
-	dma_hw->ints1 |= (1u << DMACH_AUDIO1_PIO_PING) | (1u << DMACH_AUDIO1_PIO_PONG);
-	dma_hw->inte1 |= (1u << DMACH_AUDIO1_PIO_PING) | (1u << DMACH_AUDIO1_PIO_PONG);
-	irq_set_exclusive_handler(DMA_IRQ_1, audio1_pio_dma_irq_handler);
-	irq_set_enabled(DMA_IRQ_1, true);
-
-	dma_channel_start(DMACH_AUDIO1_PIO_PING);
-}
-
-#define PCM1802_DATA_PIN_2	3
-#define AUDIO2_STREAM_ID	3
-#define DMACH_AUDIO2_PIO_PING 4
-#define DMACH_AUDIO2_PIO_PONG 5
-
 void __scratch_y("") audio2_pio_dma_irq_handler()
 {
 	uint ch_num = audio2_pio_dma_pong ? DMACH_AUDIO2_PIO_PONG : DMACH_AUDIO2_PIO_PING;
@@ -236,54 +186,68 @@ void __scratch_y("") audio2_pio_dma_irq_handler()
 	hsdaoh_update_head(AUDIO2_STREAM_ID, audio2_ringbuf_head);
 }
 
-void init_audio2_pio_input(void)
+void init_audio_pio_dma(PIO pio, uint sm_data, uint dmach_ping, uint dmach_pong, uint16_t *rbuf)
 {
-	PIO pio = pio2;
-
-	pio_set_gpio_base(pio, 0);
-
-	uint offset = pio_add_program(pio, &pcm1802_fmt00_program);
-	uint sm_data = pio_claim_unused_sm(pio, true);
-	pcm1802_fmt00_program_init(pio, sm_data, offset, PCM1802_DATA_PIN_2);
-
 	dma_channel_config c;
-	c = dma_channel_get_default_config(DMACH_AUDIO2_PIO_PING);
-	channel_config_set_chain_to(&c, DMACH_AUDIO2_PIO_PONG);
+	c = dma_channel_get_default_config(dmach_ping);
+	channel_config_set_chain_to(&c, dmach_pong);
 	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_data, false));
 	channel_config_set_read_increment(&c, false);
 	channel_config_set_write_increment(&c, true);
 	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
 
 	dma_channel_configure(
-		DMACH_AUDIO2_PIO_PING,
+		dmach_ping,
 		&c,
-		&audio2_ringbuffer[0 * RBUF_SLICE_LEN],
+		&rbuf[0 * RBUF_SLICE_LEN],
 		&pio->rxf[sm_data],
 		AUDIO_DATA_LEN/2,
 		false
 	);
-	c = dma_channel_get_default_config(DMACH_AUDIO2_PIO_PONG);
-	channel_config_set_chain_to(&c, DMACH_AUDIO2_PIO_PING);
+	c = dma_channel_get_default_config(dmach_pong);
+	channel_config_set_chain_to(&c, dmach_ping);
 	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_data, false));
 	channel_config_set_read_increment(&c, false);
 	channel_config_set_write_increment(&c, true);
 	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
 
 	dma_channel_configure(
-		DMACH_AUDIO2_PIO_PONG,
+		dmach_pong,
 		&c,
-		&audio2_ringbuffer[1 * RBUF_SLICE_LEN],
+		&rbuf[1 * RBUF_SLICE_LEN],
 		&pio->rxf[sm_data],
 		AUDIO_DATA_LEN/2,
 		false
 	);
 
-	dma_hw->ints2 |= (1u << DMACH_AUDIO2_PIO_PING) | (1u << DMACH_AUDIO2_PIO_PONG);
-	dma_hw->inte2 |= (1u << DMACH_AUDIO2_PIO_PING) | (1u << DMACH_AUDIO2_PIO_PONG);
-	irq_set_exclusive_handler(DMA_IRQ_2, audio2_pio_dma_irq_handler);
-	irq_set_enabled(DMA_IRQ_2, true);
+	uint dma_irq = (dmach_ping == DMACH_AUDIO1_PIO_PING) ? DMA_IRQ_1 : DMA_IRQ_2;
+	if (dma_irq == DMA_IRQ_1) {
+		dma_hw->ints1 |= (1u << dmach_ping) | (1u << dmach_pong);
+		dma_hw->inte1 |= (1u << dmach_ping) | (1u << dmach_pong);
+		irq_set_exclusive_handler(dma_irq, audio1_pio_dma_irq_handler);
+	} else {
+		dma_hw->ints2 |= (1u << dmach_ping) | (1u << dmach_pong);
+		dma_hw->inte2 |= (1u << dmach_ping) | (1u << dmach_pong);
+		irq_set_exclusive_handler(dma_irq, audio2_pio_dma_irq_handler);
+	}
+	irq_set_enabled(dma_irq, true);
 
-	dma_channel_start(DMACH_AUDIO2_PIO_PING);
+	dma_channel_start(dmach_ping);
+}
+
+void init_audio_pio_input(void)
+{
+	PIO pio = pio1;
+	pio_set_gpio_base(pio, 0);
+	uint offset = pio_add_program(pio, &pcm1802_fmt00_program);
+
+	uint sm_data = pio_claim_unused_sm(pio, true);
+	pcm1802_fmt00_program_init(pio, sm_data, offset, PCM1802_DATA_PIN_1);
+	init_audio_pio_dma(pio, sm_data, DMACH_AUDIO1_PIO_PING, DMACH_AUDIO1_PIO_PONG, audio1_ringbuffer);
+
+	sm_data = pio_claim_unused_sm(pio, true);
+	pcm1802_fmt00_program_init(pio, sm_data, offset, PCM1802_DATA_PIN_2);
+	init_audio_pio_dma(pio, sm_data, DMACH_AUDIO2_PIO_PING, DMACH_AUDIO2_PIO_PONG, audio2_ringbuffer);
 }
 
 #define OVERVOLT 1
@@ -305,6 +269,7 @@ int main()
 		CLOCKS_CLK_HSTX_DIV_INT_BITS
 	);
 
+#ifdef GPOUT_AUDIO_CLOCK
 	pll_init(pll_usb, 1, 1536 * MHZ, 4, 2);
 
 	/* set USB clock to clk_usb/4 */
@@ -312,16 +277,20 @@ int main()
 
 	/* set GPOUT0 clock to USB PLL/10 -> 19.2 MHz, resulting in 75 kHz ADC sample rate (19.2M/256) */
 	clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB, 10);
+#endif
 
 	stdio_init_all();
 	hsdaoh_init(GPIO_DRIVE_STRENGTH_4MA, GPIO_SLEW_RATE_SLOW);
 	hsdaoh_add_stream(0, PIO_12BIT_DUAL, (SYS_CLK/8) * 1000, ADC_DATA_LEN, RBUF_DEFAULT_SLICES, ringbuffer);
-	hsdaoh_add_stream(AUDIO1_STREAM_ID, PIO_PCM1802_AUDIO, 75000, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio1_ringbuffer);
-	hsdaoh_add_stream(AUDIO2_STREAM_ID, PIO_PCM1802_AUDIO, 75000, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio2_ringbuffer);
+	hsdaoh_add_stream(AUDIO1_STREAM_ID, PIO_PCM1802_AUDIO, 78125, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio1_ringbuffer);
+	hsdaoh_add_stream(AUDIO2_STREAM_ID, PIO_PCM1802_AUDIO, 78125, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio2_ringbuffer);
 	hsdaoh_start();
 	init_pio_input();
-	init_audio1_pio_input();
-	init_audio2_pio_input();
+	init_audio_pio_input();
+
+	/* synchronously start data input */
+	pio_set_sm_mask_enabled(pio1, 3, true);
+	pio_set_sm_mask_enabled(pio0, 1, true);
 
 	while (1)
 		__wfi();

@@ -98,6 +98,6 @@ static inline void pcm1802_fmt00_program_init(PIO pio, uint sm, uint offset, uin
 
 	// Load our configuration, and start the program from the beginning
 	pio_sm_init(pio, sm, offset, &c);
-	pio_sm_set_enabled(pio, sm, true);
+//	pio_sm_set_enabled(pio, sm, true);
 }
 %}
