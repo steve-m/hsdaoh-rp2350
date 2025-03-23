@@ -38,14 +38,24 @@ enum crc_config {
 
 typedef struct
 {
+	uint64_t data_cnt;
+	uint32_t srate;
+	uint32_t reserved1;
+	char reserved2[16];
+} __attribute__((packed, aligned(1))) stream_info_t;
+
+typedef struct
+{
 	uint32_t magic;
 	uint16_t framecounter;
 	uint8_t  reserved1;
 	uint8_t  crc_config;
 	uint16_t version;
 	uint32_t flags;
-	uint8_t  reserved2[116];
-	uint8_t  stream_cnt;
+	uint32_t reserved2[8];
+	uint16_t stream0_format;
+	uint16_t max_streamid;
+	stream_info_t stream_info[MAX_STREAMS];
 } __attribute__((packed, aligned(1))) metadata_t;
 
 #define FLAG_STREAM_ID_PRESENT	(1 << 0)

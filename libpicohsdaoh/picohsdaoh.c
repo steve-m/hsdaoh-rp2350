@@ -179,7 +179,9 @@ static uint8_t dma_sniff_pipelined_ch = 0;
 static bool dma_sniff_pipelined_disable = false;
 
 metadata_t metadata = (metadata_t) { .magic = 0xda7acab1, .crc_config = CRC16_2_LINE, .version = 1,
-				     .flags = FLAG_STREAM_ID_PRESENT | FLAG_FORMAT_ID_PRESENT };
+				     .flags = FLAG_STREAM_ID_PRESENT | FLAG_FORMAT_ID_PRESENT,
+				     .max_streamid = MAX_STREAMS
+};
 
 /* HSTX DMA IRQ handler, reconfigures the channel that just completed while
  * ther other channel is currently busy */
@@ -215,6 +217,10 @@ void __scratch_x("") hstx_dma_irq_handler()
 
 			/* increment framecounter*/
 			metadata.framecounter++;
+
+			/* latch data counters into metadata at beginning of frame */
+			for (uint i = 0; i < MAX_STREAMS; i++)
+				metadata.stream_info[i].data_cnt = streams[i].data_cnt;
 		} else {
 			ch->read_addr = (uintptr_t)vblank_line_vsync_on;
 			ch->transfer_count = count_of(vblank_line_vsync_on);
@@ -307,6 +313,11 @@ int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, 
 	stream->head = 0;
 	stream->data_cnt = 0;
 	stream->active = true;
+
+	metadata.stream_info[stream_id].srate = samplerate;
+
+	if (stream_id == 0)
+		metadata.stream0_format = format;
 
 	return 0;
 }
