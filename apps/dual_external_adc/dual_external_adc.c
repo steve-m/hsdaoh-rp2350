@@ -138,12 +138,12 @@ void init_pio_input(void)
 	dma_channel_start(DMACH_PIO_PING);
 }
 
-#define PCM1802_DATA_PIN_1	0
+#define PCM1802_DATA_PIN_1	3
 #define AUDIO1_STREAM_ID	2
 #define DMACH_AUDIO1_PIO_PING	2
 #define DMACH_AUDIO1_PIO_PONG	3
 
-#define PCM1802_DATA_PIN_2	3
+#define PCM1802_DATA_PIN_2	0
 #define AUDIO2_STREAM_ID	3
 #define DMACH_AUDIO2_PIO_PING	4
 #define DMACH_AUDIO2_PIO_PONG	5
@@ -280,7 +280,7 @@ int main()
 #endif
 
 	stdio_init_all();
-	hsdaoh_init(GPIO_DRIVE_STRENGTH_4MA, GPIO_SLEW_RATE_SLOW);
+	hsdaoh_init(GPIO_DRIVE_STRENGTH_12MA, GPIO_SLEW_RATE_FAST);
 	hsdaoh_add_stream(0, PIO_12BIT_DUAL, (SYS_CLK/8) * 1000, ADC_DATA_LEN, RBUF_DEFAULT_SLICES, ringbuffer);
 	hsdaoh_add_stream(AUDIO1_STREAM_ID, PIO_PCM1802_AUDIO, 78125, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio1_ringbuffer);
 	hsdaoh_add_stream(AUDIO2_STREAM_ID, PIO_PCM1802_AUDIO, 78125, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio2_ringbuffer);
