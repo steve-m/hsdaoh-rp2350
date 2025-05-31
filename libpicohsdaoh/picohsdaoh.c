@@ -304,6 +304,7 @@ int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, 
 		return -1;
 
 	stream_t *stream = &streams[stream_id];
+	stream->active = false;
 	stream->rbuf = ringbuf;
 	stream->format = format;
 	stream->srate = samplerate;
@@ -318,6 +319,16 @@ int hsdaoh_add_stream(uint16_t stream_id, uint16_t format, uint32_t samplerate, 
 
 	if (stream_id == 0)
 		metadata.stream0_format = format;
+
+	return 0;
+}
+
+int hsdaoh_remove_stream(uint16_t stream_id)
+{
+	if (stream_id >= MAX_STREAMS)
+		return -1;
+
+	streams[stream_id].active = false;
 
 	return 0;
 }

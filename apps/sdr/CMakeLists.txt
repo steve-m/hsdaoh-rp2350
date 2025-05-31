@@ -12,6 +12,7 @@ target_link_libraries(sdr
 	hardware_i2c
 	libpicohsdaoh
 )
+pico_generate_pio_header(sdr ${CMAKE_CURRENT_LIST_DIR}/adc_16bit_input.pio)
 pico_generate_pio_header(sdr ${CMAKE_CURRENT_LIST_DIR}/adc_20bit_input.pio)
 
 # enable usb output, disable uart output

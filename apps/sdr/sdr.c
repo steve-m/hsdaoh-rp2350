@@ -46,23 +46,32 @@
 #include <stdio.h>
 
 #include "picohsdaoh.h"
+#include "adc_16bit_input.pio.h"
 #include "adc_20bit_input.pio.h"
 
 #define I2C_TIMEOUT 50000	/* 50 ms */
 
 /* The PIO is running with sys_clk/1, and needs 4 cycles per sample,
  * so the ADC clock is sys_clk/4 */
-#define SYS_CLK		264000	// 66 MHz ADC clock
-#define HSTX_CLK_MHZ	432
+#define SYS_CLK_8BIT		328000	// 82 MHz ADC clock
+#define SYS_CLK_10BIT		264000	// 66 MHz ADC clock
+#define HSTX_CLK_MHZ		432
+
+// If we want to push everything to the limits:
+#define SYS_CLK_MAX_SRATE	336000 // 84 MHz ADC clock @ 8 bit IQ
+#define HSTX_CLK_MAX_SRATE	440
 
 // For alignment of 5x16 bit words in the payload, so that every line starts with word 0
-#define ADC_DATA_LEN	(RBUF_SLICE_LEN - 5)
+#define ADC_DATA_LEN_10_BIT	(RBUF_SLICE_LEN - 5)
+#define ADC_DATA_LEN_8_BIT	(RBUF_SLICE_LEN - 3)
 
 #define PIO_INPUT_PIN_BASE 27
 #define PIO_OUTPUT_CLK_PIN 26
 
 #define DMACH_PIO_PING 0
 #define DMACH_PIO_PONG 1
+
+bool enable_8bit_mode = false;
 
 static bool pio_dma_pong = false;
 uint16_t ringbuffer[RBUF_DEFAULT_TOTAL_LEN];
@@ -78,22 +87,31 @@ void __scratch_y("") pio_dma_irq_handler()
 	ringbuf_head = (ringbuf_head + 1) % RBUF_DEFAULT_SLICES;
 
 	ch->write_addr = (uintptr_t)&ringbuffer[ringbuf_head * RBUF_SLICE_LEN];
-	ch->transfer_count = ADC_DATA_LEN;
+	ch->transfer_count = enable_8bit_mode ? ADC_DATA_LEN_8_BIT : ADC_DATA_LEN_10_BIT;
 
 	hsdaoh_update_head(0, ringbuf_head);
 }
 
-void init_pio_input(void)
-{
-	PIO pio = pio0;
+uint offset;
+uint offset2;
+uint sm_data;
+PIO pio = pio0;
 
+void init_pio(void)
+{
 	/* move up GPIO base of PIO to access all ADC pins */
 	pio_set_gpio_base(pio, 16);
 
-	uint offset = pio_add_program(pio, &adc_20bit_input_program);
-	uint sm_data = pio_claim_unused_sm(pio, true);
+	offset = pio_add_program(pio, &adc_16bit_input_program);
+	offset2 = pio_add_program(pio, &adc_20bit_input_program);
 
-	adc_20bit_input_program_init(pio, sm_data, offset, PIO_INPUT_PIN_BASE, PIO_OUTPUT_CLK_PIN);
+	sm_data = pio_claim_unused_sm(pio, true);
+}
+
+void __no_inline_not_in_flash_func(init_pio_dma)(void)
+{
+	ringbuf_head = 2;
+	pio_dma_pong = false;
 
 	dma_channel_config c;
 	c = dma_channel_get_default_config(DMACH_PIO_PING);
@@ -108,7 +126,7 @@ void init_pio_input(void)
 		&c,
 		&ringbuffer[0 * RBUF_SLICE_LEN],
 		&pio->rxf[sm_data],
-		ADC_DATA_LEN,
+		enable_8bit_mode ? ADC_DATA_LEN_8_BIT : ADC_DATA_LEN_10_BIT,
 		false
 	);
 	c = dma_channel_get_default_config(DMACH_PIO_PONG);
@@ -123,7 +141,7 @@ void init_pio_input(void)
 		&c,
 		&ringbuffer[1 * RBUF_SLICE_LEN],
 		&pio->rxf[sm_data],
-		ADC_DATA_LEN,
+		enable_8bit_mode ? ADC_DATA_LEN_8_BIT : ADC_DATA_LEN_10_BIT,
 		false
 	);
 
@@ -135,60 +153,29 @@ void init_pio_input(void)
 	dma_channel_start(DMACH_PIO_PING);
 }
 
-#define OVERVOLT 1
-
-int main()
+void __no_inline_not_in_flash_func(init_pio_input)(void)
 {
-#ifdef OVERVOLT
-	/* set maximum 'allowed' voltage without voiding warranty */
-	vreg_set_voltage(VREG_VOLTAGE_MAX);
-	//vreg_disable_voltage_limit();
-	//vreg_set_voltage(VREG_VOLTAGE_1_80);
-	sleep_ms(1);
-#endif
-	hsdaoh_set_sys_clock_khz(SYS_CLK);
-	int usbdiv;
+//	irq_set_enabled(DMA_IRQ_0, false);
+//	dma_channel_start(DMACH_PIO_PING);
+//	dma_channel_start(DMACH_PIO_PONG);
+//	pio_sm_set_enabled(pio, sm_data, false);
 
-	/* set USB clock to clk_sys/n */
-//	usbdiv = SYS_CLK/48000;
-//	hw_write_masked(&clocks_hw->clk[clk_usb].ctrl,
-//			CLOCKS_CLK_USB_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS << CLOCKS_CLK_USB_CTRL_AUXSRC_LSB,
-//			CLOCKS_CLK_USB_CTRL_AUXSRC_BITS);
+	set_sys_clock_khz(enable_8bit_mode ? SYS_CLK_8BIT : SYS_CLK_10BIT, true);
 
-	usbdiv = HSTX_CLK_MHZ / 48;
+	init_pio_dma();
 
-	hw_write_masked(&clocks_hw->clk[clk_usb].div,
-			usbdiv << CLOCKS_CLK_USB_DIV_INT_LSB,
-			CLOCKS_CLK_USB_DIV_INT_BITS);
+	if (enable_8bit_mode) {
+		hsdaoh_add_stream(0, PIO_8BIT_IQ, (SYS_CLK_8BIT/4) * 1000, ADC_DATA_LEN_8_BIT, RBUF_DEFAULT_SLICES, ringbuffer);
+		adc_16bit_input_program_init(pio, sm_data, offset, PIO_INPUT_PIN_BASE, PIO_OUTPUT_CLK_PIN);
 
-	/* Initialize USB PLL for HSTX clock */
-	pll_init(pll_usb, 1, HSTX_CLK_MHZ * 2 * MHZ, 2, 1);
+	} else {
+		hsdaoh_add_stream(0, PIO_10BIT_IQ, (SYS_CLK_10BIT/4) * 1000, ADC_DATA_LEN_10_BIT, RBUF_DEFAULT_SLICES, ringbuffer);
+		adc_20bit_input_program_init(pio, sm_data, offset2, PIO_INPUT_PIN_BASE, PIO_OUTPUT_CLK_PIN);
+	}
+}
 
-	/* set HSTX divider to 1 */
-	hw_write_masked(
-		&clocks_hw->clk[clk_hstx].div,
-		1 << CLOCKS_CLK_HSTX_DIV_INT_LSB,
-		CLOCKS_CLK_HSTX_DIV_INT_BITS
-	);
-
-	/* set HSTX clock source to PLL_USB */
-	hw_write_masked(&clocks_hw->clk[clk_hstx].ctrl,
-			CLOCKS_CLK_HSTX_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB << CLOCKS_CLK_HSTX_CTRL_AUXSRC_LSB,
-			CLOCKS_CLK_HSTX_CTRL_AUXSRC_BITS);
-
-	stdio_init_all();
-
-	hsdaoh_init(GPIO_DRIVE_STRENGTH_12MA, GPIO_SLEW_RATE_FAST);
-	hsdaoh_add_stream(0, PIO_10BIT_IQ, (SYS_CLK/8) * 1000, ADC_DATA_LEN, RBUF_DEFAULT_SLICES, ringbuffer);
-	hsdaoh_start();
-	init_pio_input();
-
-	i2c_init(i2c_default, 100 * 1000);
-	gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
-	gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
-	gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
-	gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
-
+void __no_inline_not_in_flash_func(handle_tuner_interface)(void)
+{
 	/* handle tty -> I2C interface for I2C tuner access */
 	uint8_t i2c_addr, reg, val;
 	int ret;
@@ -197,6 +184,16 @@ int main()
 		char c = getchar();
 
 		switch (c) {
+		case 'a':
+			hsdaoh_remove_stream(0);
+			pio_sm_set_enabled(pio, sm_data, false);
+			irq_set_enabled(DMA_IRQ_0, false);
+			dma_channel_abort(DMACH_PIO_PING);
+			dma_channel_abort(DMACH_PIO_PONG);
+			pio_sm_clear_fifos(pio, sm_data);
+			enable_8bit_mode = !enable_8bit_mode;
+			init_pio_input();
+			break;
 		case 'r':
 			i2c_addr = getchar();
 			reg = getchar();
@@ -239,4 +236,62 @@ int main()
 		}
 
 	}
+}
+
+#define OVERVOLT 1
+
+int main()
+{
+#ifdef OVERVOLT
+	/* set maximum 'allowed' voltage without voiding warranty */
+	//vreg_set_voltage(VREG_VOLTAGE_MAX);
+	vreg_disable_voltage_limit();
+	vreg_set_voltage(VREG_VOLTAGE_1_65);
+	sleep_ms(1);
+#endif
+	hsdaoh_set_sys_clock_khz(enable_8bit_mode ? SYS_CLK_8BIT : SYS_CLK_10BIT);
+	int usbdiv = HSTX_CLK_MHZ / 48;
+
+#ifdef USE_SYS_CLK_FOR_USB
+	/* set USB clock to clk_sys/n */
+	usbdiv = SYS_CLK/48000;
+	hw_write_masked(&clocks_hw->clk[clk_usb].ctrl,
+			CLOCKS_CLK_USB_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS << CLOCKS_CLK_USB_CTRL_AUXSRC_LSB,
+			CLOCKS_CLK_USB_CTRL_AUXSRC_BITS);
+#endif
+
+	hw_write_masked(&clocks_hw->clk[clk_usb].div,
+			usbdiv << CLOCKS_CLK_USB_DIV_INT_LSB,
+			CLOCKS_CLK_USB_DIV_INT_BITS);
+
+	/* Initialize USB PLL for HSTX clock */
+	pll_init(pll_usb, 1, HSTX_CLK_MHZ * 4 * MHZ, 2, 2);
+
+	/* set HSTX divider to 1 */
+	hw_write_masked(
+		&clocks_hw->clk[clk_hstx].div,
+		1 << CLOCKS_CLK_HSTX_DIV_INT_LSB,
+		CLOCKS_CLK_HSTX_DIV_INT_BITS
+	);
+
+	/* set HSTX clock source to PLL_USB */
+	hw_write_masked(&clocks_hw->clk[clk_hstx].ctrl,
+			CLOCKS_CLK_HSTX_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB << CLOCKS_CLK_HSTX_CTRL_AUXSRC_LSB,
+			CLOCKS_CLK_HSTX_CTRL_AUXSRC_BITS);
+
+	stdio_init_all();
+
+	hsdaoh_init(GPIO_DRIVE_STRENGTH_12MA, GPIO_SLEW_RATE_FAST);
+	hsdaoh_start();
+
+	init_pio();
+	init_pio_input();
+
+	i2c_init(i2c_default, 100 * 1000);
+	gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
+	gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
+	gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
+	gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
+
+	handle_tuner_interface();
 }
