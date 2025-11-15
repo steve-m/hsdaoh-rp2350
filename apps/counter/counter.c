@@ -117,7 +117,7 @@ void init_pio_input(void)
 int main()
 {
 	vreg_set_voltage(VREG_VOLTAGE_MAX);
-	sleep_ms(1);
+	sleep_us(SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST_DELAY_US);
 	hsdaoh_set_sys_clock_khz(SYS_CLK);
 
 	/* set HSTX clock to sysclk/1 */

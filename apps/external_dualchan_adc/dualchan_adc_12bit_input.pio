@@ -3,8 +3,8 @@
 ;
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
-; Sample 12 bit parallel ADC (AD9226) every 2 PIO cycles on rising clock edge,
-; pack four 12 bit samples in three 16 bit words
+; Sample 12 bit dualchannel parallel ADC (AD9238) every 2 PIO cycles on both
+; clock edges (DDR), pack four 12 bit samples in three 16 bit words
 ; ADC clock output as side-set
 ;
 ; Data being pushed to the FIFO, four 12 bit samples A-D
@@ -13,7 +13,7 @@
 ; Third word:  A11 A10 A09 A08 D11 D10 D09 D08 D07 D06 D05 D04 D03 D02 D01 D00
 
 .pio_version 1
-.program adc_12bit_input
+.program dualchan_adc_12bit_input
 .side_set 2
 
 public entry_point:
@@ -22,20 +22,20 @@ public entry_point:
 	mov osr, pins	side 3	; sample A
 	out isr, 4	side 0
 
-	in pins, 12	side 3	; sample B, autopush
-	out isr, 4	side 0
+	in pins, 12	side 0	; sample B, autopush
+	out isr, 4	side 3
 
 	in pins, 12	side 3	; sample C, autopush
 	out isr, 4	side 0
 
-	in pins, 12	side 3	; sample D, autopush
-	nop		side 0
+	in pins, 12	side 0	; sample D, autopush
+	nop		side 3
 .wrap
 
 % c-sdk {
-static inline void adc_12bit_input_program_init(PIO pio, uint sm, uint offset, uint pin, uint clk_pin)
+static inline void dualchan_adc_12bit_input_program_init(PIO pio, uint sm, uint offset, uint pin, uint clk_pin)
 {
-	pio_sm_config c = adc_12bit_input_program_get_default_config(offset);
+	pio_sm_config c = dualchan_adc_12bit_input_program_get_default_config(offset);
 
 	// Set the IN base pin to the provided `pin` parameter.
 	sm_config_set_in_pins(&c, pin);
@@ -63,7 +63,7 @@ static inline void adc_12bit_input_program_init(PIO pio, uint sm, uint offset, u
 		16	// Autopush threshold = 16
 	);
 
-	// required in order to set shift-to-right to true (for the out ops)
+	// required in order to set shift-to-right to true (for the out, null ops)
 	sm_config_set_out_shift(
 		&c,
 		true,	// Shift-to-right = true

@@ -132,7 +132,7 @@ int main()
 {
 	/* set maximum 'allowed' voltage without voiding warranty */
 	vreg_set_voltage(VREG_VOLTAGE_MAX);
-	sleep_ms(1);
+	sleep_us(SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST_DELAY_US);
 
 	hsdaoh_set_sys_clock_khz(SYS_CLK);
 

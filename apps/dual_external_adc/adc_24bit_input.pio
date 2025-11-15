@@ -3,7 +3,7 @@
 ;
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
-; Sample 2x12 bit parallel ADC (AD9226) every 4 PIO cycles on rising clock edge,
+; Sample 2x12 bit parallel ADC (AD9226) every 2 PIO cycles on rising clock edge,
 ; pack four 24 bit samples in three 32 bit words
 ; ADC clock output as side-set
 ;
@@ -64,7 +64,7 @@ static inline void adc_24bit_input_program_init(PIO pio, uint sm, uint offset, u
 		32	// Autopush threshold = 32
 	);
 
-	// required in order to set shift-to-right to true (for the out, null ops)
+	// required in order to set shift-to-right to true (for the out ops)
 	sm_config_set_out_shift(
 		&c,
 		true,	// Shift-to-right = true

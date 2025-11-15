@@ -2,9 +2,9 @@
  * hsdaoh - High Speed Data Acquisition over MS213x USB3 HDMI capture sticks
  * Implementation for the Raspberry Pi RP2350 HSTX peripheral
  *
- * 16 bit logic analyzer example
+ * External dualchannel 12-bit ADC example, connected to the PIO
  *
- * Copyright (c) 2024 by Steve Markgraf <steve@steve-m.de>
+ * Copyright (c) 2024-2025 by Steve Markgraf <steve@steve-m.de>
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *
@@ -37,17 +37,28 @@
 #include "hardware/irq.h"
 #include "hardware/sync.h"
 #include "hardware/vreg.h"
+#include "hardware/pll.h"
 #include "hardware/dma.h"
 #include "hardware/pio.h"
 
 #include "picohsdaoh.h"
-#include "16bit_input.pio.h"
+#include "dualchan_adc_12bit_input.pio.h"
+#include "pcm1802_fmt00.pio.h"
 
-/* The PIO is running with sys_clk, and needs 10 cycles per sample,
- * so the LA is sampling with 32 MHz */
-#define SYS_CLK		320000
+/* The PIO is running with sys_clk/1, and needs 4 cycles per sample,
+ * so the ADC clock is sys_clk/4 */
+#define SYS_CLK		320000	// 40 MHz ADC clock
 
+// For alignment of 3x16 bit words in the payload, so that every line starts with word 0
+#define ADC_DATA_LEN	(RBUF_SLICE_LEN - 3)
+
+// Same here for 2x32 bit words
+#define AUDIO_DATA_LEN		(RBUF_SLICE_LEN - 4)
+#define AUDIO_RBUF_SLICES	8
+
+// ADC is attached to GP0 - GP11 with clock on GP20
 #define PIO_INPUT_PIN_BASE 0
+#define PIO_OUTPUT_CLK_PIN 20
 
 #define DMACH_PIO_PING 0
 #define DMACH_PIO_PONG 1
@@ -66,7 +77,7 @@ void __scratch_y("") pio_dma_irq_handler()
 	ringbuf_head = (ringbuf_head + 1) % RBUF_DEFAULT_SLICES;
 
 	ch->write_addr = (uintptr_t)&ringbuffer[ringbuf_head * RBUF_SLICE_LEN];
-	ch->transfer_count = RBUF_MAX_DATA_LEN;
+	ch->transfer_count = ADC_DATA_LEN;
 
 	hsdaoh_update_head(0, ringbuf_head);
 }
@@ -74,9 +85,9 @@ void __scratch_y("") pio_dma_irq_handler()
 void init_pio_input(void)
 {
 	PIO pio = pio0;
-	uint offset = pio_add_program(pio, &la_16bit_input_program);
+	uint offset = pio_add_program(pio, &dualchan_adc_12bit_input_program);
 	uint sm_data = pio_claim_unused_sm(pio, true);
-	la_16bit_input_program_init(pio, sm_data, offset, PIO_INPUT_PIN_BASE);
+	dualchan_adc_12bit_input_program_init(pio, sm_data, offset, PIO_INPUT_PIN_BASE, PIO_OUTPUT_CLK_PIN);
 
 	dma_channel_config c;
 	c = dma_channel_get_default_config(DMACH_PIO_PING);
@@ -91,7 +102,7 @@ void init_pio_input(void)
 		&c,
 		&ringbuffer[0 * RBUF_SLICE_LEN],
 		&pio->rxf[sm_data],
-		RBUF_MAX_DATA_LEN,
+		ADC_DATA_LEN,
 		false
 	);
 	c = dma_channel_get_default_config(DMACH_PIO_PONG);
@@ -106,7 +117,7 @@ void init_pio_input(void)
 		&c,
 		&ringbuffer[1 * RBUF_SLICE_LEN],
 		&pio->rxf[sm_data],
-		RBUF_MAX_DATA_LEN,
+		ADC_DATA_LEN,
 		false
 	);
 
@@ -118,27 +129,107 @@ void init_pio_input(void)
 	dma_channel_start(DMACH_PIO_PING);
 }
 
+#define PCM1802_DATA_PIN	22
+
+#define DMACH_AUDIO_PIO_PING 2
+#define DMACH_AUDIO_PIO_PONG 3
+
+static bool audio_pio_dma_pong = false;
+uint16_t audio_ringbuffer[AUDIO_RBUF_SLICES * RBUF_SLICE_LEN];
+int audio_ringbuf_head = 2;
+
+void __scratch_y("") audio_pio_dma_irq_handler()
+{
+	uint ch_num = audio_pio_dma_pong ? DMACH_AUDIO_PIO_PONG : DMACH_AUDIO_PIO_PING;
+	dma_channel_hw_t *ch = &dma_hw->ch[ch_num];
+	dma_hw->intr = 1u << ch_num;
+	audio_pio_dma_pong = !audio_pio_dma_pong;
+
+	audio_ringbuf_head = (audio_ringbuf_head + 1) % AUDIO_RBUF_SLICES;
+
+	ch->write_addr = (uintptr_t)&audio_ringbuffer[audio_ringbuf_head * RBUF_SLICE_LEN];
+	ch->transfer_count = AUDIO_DATA_LEN/2;
+
+	hsdaoh_update_head(2, audio_ringbuf_head);
+}
+
+void init_audio_pio_input(void)
+{
+	PIO pio = pio0;
+	uint offset = pio_add_program(pio, &pcm1802_fmt00_program);
+	uint sm_data = pio_claim_unused_sm(pio, true);
+	pcm1802_fmt00_program_init(pio, sm_data, offset, PCM1802_DATA_PIN);
+
+	dma_channel_config c;
+	c = dma_channel_get_default_config(DMACH_AUDIO_PIO_PING);
+	channel_config_set_chain_to(&c, DMACH_AUDIO_PIO_PONG);
+	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_data, false));
+	channel_config_set_read_increment(&c, false);
+	channel_config_set_write_increment(&c, true);
+	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+
+	dma_channel_configure(
+		DMACH_AUDIO_PIO_PING,
+		&c,
+		&audio_ringbuffer[0 * RBUF_SLICE_LEN],
+		&pio->rxf[sm_data],
+		AUDIO_DATA_LEN/2,
+		false
+	);
+	c = dma_channel_get_default_config(DMACH_AUDIO_PIO_PONG);
+	channel_config_set_chain_to(&c, DMACH_AUDIO_PIO_PING);
+	channel_config_set_dreq(&c, pio_get_dreq(pio, sm_data, false));
+	channel_config_set_read_increment(&c, false);
+	channel_config_set_write_increment(&c, true);
+	channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+
+	dma_channel_configure(
+		DMACH_AUDIO_PIO_PONG,
+		&c,
+		&audio_ringbuffer[1 * RBUF_SLICE_LEN],
+		&pio->rxf[sm_data],
+		AUDIO_DATA_LEN/2,
+		false
+	);
+
+	dma_hw->ints1 |= (1u << DMACH_AUDIO_PIO_PING) | (1u << DMACH_AUDIO_PIO_PONG);
+	dma_hw->inte1 |= (1u << DMACH_AUDIO_PIO_PING) | (1u << DMACH_AUDIO_PIO_PONG);
+	irq_set_exclusive_handler(DMA_IRQ_1, audio_pio_dma_irq_handler);
+	irq_set_enabled(DMA_IRQ_1, true);
+
+	dma_channel_start(DMACH_AUDIO_PIO_PING);
+}
+
+#define OVERVOLT 1
+
 int main()
 {
+#ifdef OVERVOLT
 	/* set maximum 'allowed' voltage without voiding warranty */
 	vreg_set_voltage(VREG_VOLTAGE_MAX);
 	sleep_us(SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST_DELAY_US);
+#endif
 
 	hsdaoh_set_sys_clock_khz(SYS_CLK);
 
-	/* set HSTX clock to sysclk/2 */
+	/* set HSTX clock to sysclk/1 */
 	hw_write_masked(
 		&clocks_hw->clk[clk_hstx].div,
-		2 << CLOCKS_CLK_HSTX_DIV_INT_LSB,
+		1 << CLOCKS_CLK_HSTX_DIV_INT_LSB,
 		CLOCKS_CLK_HSTX_DIV_INT_BITS
 	);
 
 	stdio_init_all();
 
-	hsdaoh_init(GPIO_DRIVE_STRENGTH_4MA, GPIO_SLEW_RATE_SLOW);
-	hsdaoh_add_stream(0, 1, (SYS_CLK/8) * 1000, RBUF_MAX_DATA_LEN, RBUF_DEFAULT_SLICES, ringbuffer);
+	hsdaoh_init(GPIO_DRIVE_STRENGTH_12MA, GPIO_SLEW_RATE_FAST);
+	hsdaoh_add_stream(0, PIO_DUALCHAN_12BIT, (SYS_CLK/4) * 1000, ADC_DATA_LEN, RBUF_DEFAULT_SLICES, ringbuffer);
+	hsdaoh_add_stream(2, PIO_PCM1802_AUDIO, 78125, AUDIO_DATA_LEN, AUDIO_RBUF_SLICES, audio_ringbuffer);
 	hsdaoh_start();
 	init_pio_input();
+	init_audio_pio_input();
+
+	/* synchronously start data input */
+	pio_set_sm_mask_enabled(pio0, 3, true);
 
 	while (1)
 		__wfi();

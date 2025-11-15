@@ -247,7 +247,7 @@ int main()
 	//vreg_set_voltage(VREG_VOLTAGE_MAX);
 	vreg_disable_voltage_limit();
 	vreg_set_voltage(VREG_VOLTAGE_1_65);
-	sleep_ms(1);
+	sleep_us(SYS_CLK_VREG_VOLTAGE_AUTO_ADJUST_DELAY_US);
 #endif
 	hsdaoh_set_sys_clock_khz(enable_8bit_mode ? SYS_CLK_8BIT : SYS_CLK_10BIT);
 	int usbdiv = HSTX_CLK_MHZ / 48;
