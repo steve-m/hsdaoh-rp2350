@@ -1,5 +1,5 @@
 add_executable(external_dualchan_adc
-	external_dualchan_adc
+	external_dualchan_adc.c
 )
 
 target_compile_options(external_dualchan_adc PRIVATE -Wall)
